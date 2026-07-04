@@ -65,13 +65,21 @@ fn main() -> Result<()> {
     let mut emu = Emulator::new(bbk_model);
 
     // Load optional ROMs
+    let mut has_rom = false;
     if let Some(path) = &cli.rom8 {
         let data = fs::read(path)?;
         emu.load_rom_8(&data);
+        has_rom = true;
     }
     if let Some(path) = &cli.rome {
         let data = fs::read(path)?;
         emu.load_rom_e(&data);
+        has_rom = true;
+    }
+
+    // Run OS initialization if ROM is loaded
+    if has_rom {
+        emu.run_os_init();
     }
 
     // Load game
@@ -82,13 +90,36 @@ fn main() -> Result<()> {
     log::info!("Game: {}", cli.game.display());
     log::info!("Scale: {}x", cli.scale);
 
-    // TODO: Initialize window (winit + softbuffer)
-    // TODO: Initialize audio (cpal)
-    // TODO: Main loop: run frame + render + handle input
+    // Run emulation
+    // In a real implementation, this would be a window event loop
+    // For now, just run a fixed number of frames
+    let target_fps = 60;
+    let frame_duration = std::time::Duration::from_micros(1_000_000 / target_fps);
 
-    // Temporary: run a few frames for testing
-    for _ in 0..60 {
+    log::info!("Running emulation at {} FPS...", target_fps);
+
+    for frame in 0..600 {
+        let start = std::time::Instant::now();
+
+        // Run one frame
         emu.run_frame();
+
+        // Handle input (placeholder)
+        // In real implementation, this would read from window events
+
+        // Render (placeholder)
+        // In real implementation, this would render to window
+
+        // Frame timing
+        let elapsed = start.elapsed();
+        if elapsed < frame_duration {
+            std::thread::sleep(frame_duration - elapsed);
+        }
+
+        // Log progress every 60 frames
+        if frame % 60 == 0 {
+            log::info!("Frame {}: {} cycles", frame, emu.cpu.cycles());
+        }
     }
 
     log::info!("Emulation complete. Frames: {}", emu.frame_count());

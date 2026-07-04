@@ -1,4 +1,4 @@
-//! System call implementations
+//! System call implementations for HLE mode
 
 pub mod lcd;
 pub mod keyboard;
@@ -10,7 +10,8 @@ pub mod misc;
 
 use crate::syscall::SyscallTable;
 
-/// Build the default syscall table for a model
+/// Build the default syscall table
+/// Addresses are based on common BBK OS patterns
 pub fn build_syscall_table() -> SyscallTable {
     let mut table = SyscallTable::new();
 

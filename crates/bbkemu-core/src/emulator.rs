@@ -16,10 +16,8 @@ use crate::save::SaveState;
 
 /// Main emulator struct
 pub struct Emulator {
-    /// 6502 CPU
+    /// 6502 CPU (owns memory)
     pub cpu: CpuWrapper,
-    /// Memory bus
-    pub memory: Memory,
     /// LCD display
     pub lcd: Lcd,
     /// Input system
@@ -42,11 +40,12 @@ impl Emulator {
     /// Create a new emulator instance
     pub fn new(model: &'static BbkModel) -> Self {
         let audio = Audio::new(44100);
+        let memory = Memory::new();
+        let cpu = CpuWrapper::new(memory);
         let syscalls = syscalls::build_syscall_table();
 
         Self {
-            cpu: CpuWrapper::new(),
-            memory: Memory::new(),
+            cpu,
             lcd: Lcd::new(),
             input: Input::new(),
             audio,
@@ -69,13 +68,13 @@ impl Emulator {
         log::info!("Loading game: {} (entry: 0x{:04X})", gam.name(), gam.entry_point);
 
         // Initialize memory
-        self.memory.init();
+        self.cpu.memory_mut().init();
 
         // Load game into flash at 0x20D000
         let flash_offset = 0xD000;
         let game_data = &gam.data;
-        let end = (flash_offset + game_data.len()).min(self.memory.flash.len());
-        self.memory.flash[flash_offset..end].copy_from_slice(&game_data[..end - flash_offset]);
+        let end = (flash_offset + game_data.len()).min(self.cpu.memory().flash.len());
+        self.cpu.memory_mut().flash[flash_offset..end].copy_from_slice(&game_data[..end - flash_offset]);
 
         // Setup flash headers
         let sys_hdr = [
@@ -93,44 +92,41 @@ impl Emulator {
         gam_hdr[15] = 0x3D;
 
         let flash_base = 0x8000;
-        self.memory.flash[flash_base..flash_base + 16].copy_from_slice(&sys_hdr);
-        self.memory.flash[flash_base + 16..flash_base + 32].copy_from_slice(&gam_hdr);
+        self.cpu.memory_mut().flash[flash_base..flash_base + 16].copy_from_slice(&sys_hdr);
+        self.cpu.memory_mut().flash[flash_base + 16..flash_base + 32].copy_from_slice(&gam_hdr);
 
         // Setup bank mappings
-        self.memory.bank_switch.set(0x5, 0x20D);
-        self.memory.bank_switch.set(0x6, 0x20E);
-        self.memory.bank_switch.set(0x7, 0x20F);
-        self.memory.bank_switch.set(0x8, 0x210);
+        self.cpu.memory_mut().bank_switch.set(0x5, 0x20D);
+        self.cpu.memory_mut().bank_switch.set(0x6, 0x20E);
+        self.cpu.memory_mut().bank_switch.set(0x7, 0x20F);
+        self.cpu.memory_mut().bank_switch.set(0x8, 0x210);
 
         let data_bank = 0x20D + (gam.data_offset >> 12);
-        self.memory.bank_switch.set(0x9, data_bank);
-        self.memory.bank_switch.set(0xA, data_bank + 1);
-        self.memory.bank_switch.set(0xB, data_bank + 2);
-        self.memory.bank_switch.set(0xC, data_bank + 3);
+        self.cpu.memory_mut().bank_switch.set(0x9, data_bank);
+        self.cpu.memory_mut().bank_switch.set(0xA, data_bank + 1);
+        self.cpu.memory_mut().bank_switch.set(0xB, data_bank + 2);
+        self.cpu.memory_mut().bank_switch.set(0xC, data_bank + 3);
 
         // Setup save area
         let save_base = 0x7000; // 4980
-        self.memory.flash[flash_base + save_base + 0xF8] = 0x02;
-        self.memory.flash[flash_base + save_base + 0xF9] = 0x02;
-        self.memory.flash[flash_base + save_base + 0xFA] = 0x02;
-        self.memory.flash[flash_base + save_base + 0xFB] = 0x02;
-        self.memory.flash[flash_base + save_base + 0xFC] = 0x02;
-        self.memory.flash[flash_base + save_base + 0xFD] = 0x02;
-        self.memory.flash[flash_base + save_base + 0xFE] = 0x03;
-        self.memory.flash[flash_base + save_base + 0xFF] = 0x02;
+        self.cpu.memory_mut().flash[flash_base + save_base + 0xF8] = 0x02;
+        self.cpu.memory_mut().flash[flash_base + save_base + 0xF9] = 0x02;
+        self.cpu.memory_mut().flash[flash_base + save_base + 0xFA] = 0x02;
+        self.cpu.memory_mut().flash[flash_base + save_base + 0xFB] = 0x02;
+        self.cpu.memory_mut().flash[flash_base + save_base + 0xFC] = 0x02;
+        self.cpu.memory_mut().flash[flash_base + save_base + 0xFD] = 0x02;
+        self.cpu.memory_mut().flash[flash_base + save_base + 0xFE] = 0x03;
+        self.cpu.memory_mut().flash[flash_base + save_base + 0xFF] = 0x02;
 
         // Set system control
-        self.memory.write(0x2029, 0x0D);
-        self.memory.write(0x202A, 0x02);
+        self.cpu.memory_mut().write(0x2029, 0x0D);
+        self.cpu.memory_mut().write(0x202A, 0x02);
 
-        // Push return address (BRK handler at 0x0260)
-        self.cpu.push16(&mut self.memory, 0x0260);
+        // Reset CPU to initialize registers
+        self.cpu.reset();
 
         // Set PC to game entry point
         self.cpu.set_pc(gam.entry_point);
-
-        // Set initial CPU state
-        self.cpu.set_sp(0xFF);
 
         self.running = true;
         log::info!("Game loaded, starting execution at 0x{:04X}", gam.entry_point);
@@ -140,14 +136,248 @@ impl Emulator {
 
     /// Load font ROM (8.BIN) - optional
     pub fn load_rom_8(&mut self, data: &[u8]) {
-        self.memory.load_rom_8(data);
+        self.cpu.memory_mut().load_rom_8(data);
         log::info!("Font ROM loaded ({} bytes)", data.len());
     }
 
     /// Load OS ROM (E.BIN) - optional, for LLE fallback
     pub fn load_rom_e(&mut self, data: &[u8]) {
-        self.memory.load_rom_e(data);
+        self.cpu.memory_mut().load_rom_e(data);
         log::info!("OS ROM loaded ({} bytes)", data.len());
+    }
+
+    /// Run OS initialization sequence
+    /// This runs the OS code at 0x350 until _MTCT register becomes 0xFE
+    pub fn run_os_init(&mut self) {
+        log::info!("Running OS initialization...");
+
+        // Set PC to OS entry point
+        self.cpu.set_pc(0x350);
+
+        // Run until _MTCT becomes 0xFE
+        let mut max_cycles = 10_000_000; // Safety limit
+        while max_cycles > 0 {
+            let cycles = self.cpu.step();
+            max_cycles -= cycles as i64;
+
+            // Check if OS init is complete
+            let mtct = self.cpu.memory().ram[0x22B]; // _MTCT register
+            if mtct == 0xFE {
+                log::info!("OS initialization complete");
+                return;
+            }
+        }
+
+        log::warn!("OS initialization timed out");
+    }
+
+    /// Handle a syscall directly
+    fn handle_syscall(&mut self, target: u16) -> crate::syscall::SyscallResult {
+        use crate::syscall::SyscallResult;
+
+        match target {
+            // LCD syscalls
+            0xE000 => {
+                // lcd_init
+                self.lcd.clear();
+                SyscallResult::handled()
+            }
+            0xE003 => {
+                // lcd_clear
+                self.lcd.clear();
+                SyscallResult::handled()
+            }
+            0xE006 => {
+                // lcd_pixel
+                let x = self.cpu.x();
+                let y = self.cpu.y();
+                let color = self.cpu.a() != 0;
+                self.lcd.set_pixel(x, y, color);
+                SyscallResult::handled()
+            }
+            0xE009 => {
+                // lcd_char
+                let ch = self.cpu.a();
+                log::trace!("lcd_char: 0x{:02X}", ch);
+                SyscallResult::handled()
+            }
+            0xE00C => {
+                // lcd_string
+                let addr = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
+                log::trace!("lcd_string: addr=0x{:04X}", addr);
+                SyscallResult::handled()
+            }
+            0xE00F => {
+                // lcd_cursor
+                let x = self.cpu.x();
+                let y = self.cpu.y();
+                self.lcd.set_cursor(x, y);
+                SyscallResult::handled()
+            }
+            0xE012 => {
+                // lcd_rect
+                log::trace!("lcd_rect");
+                SyscallResult::handled()
+            }
+            0xE015 => {
+                // lcd_line
+                log::trace!("lcd_line");
+                SyscallResult::handled()
+            }
+            0xE018 => {
+                // lcd_scroll
+                let lines = self.cpu.a();
+                self.lcd.scroll_up(lines);
+                SyscallResult::handled()
+            }
+            0xE01B => {
+                // lcd_refresh
+                SyscallResult::handled()
+            }
+
+            // Keyboard syscalls
+            0xE020 => {
+                // key_get
+                let key = self.input.get_key();
+                SyscallResult::with_return(key)
+            }
+            0xE023 => {
+                // key_hit
+                let has_key = self.input.key_hit();
+                SyscallResult::with_return(if has_key { 1 } else { 0 })
+            }
+            0xE026 => {
+                // key_clear
+                self.input.clear_buffer();
+                SyscallResult::handled()
+            }
+            0xE029 => {
+                // key_wait
+                let key = self.input.get_key();
+                SyscallResult::with_return(key)
+            }
+
+            // Audio syscalls
+            0xE030 => {
+                // beep
+                let freq = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
+                let duration = self.cpu.a() as u16;
+                if freq > 0 {
+                    self.audio.play_tone(freq, duration * 10);
+                }
+                SyscallResult::handled()
+            }
+            0xE033 => {
+                // sound_stop
+                self.audio.stop();
+                SyscallResult::handled()
+            }
+
+            // Timer syscalls
+            0xE040 => {
+                // timer_set
+                let channel = self.cpu.a() as usize;
+                let value = self.cpu.x();
+                if channel < 4 {
+                    self.cpu.memory_mut().ram[0x227 + channel] = value;
+                    self.cpu.memory_mut().ram[0x226] |= 1 << channel;
+                }
+                SyscallResult::handled()
+            }
+            0xE043 => {
+                // timer_get
+                let channel = self.cpu.a() as usize;
+                if channel < 4 {
+                    SyscallResult::with_return(self.cpu.memory().ram[0x227 + channel])
+                } else {
+                    SyscallResult::with_return(0)
+                }
+            }
+            0xE046 => {
+                // rtc_read
+                let field = self.cpu.a() as usize;
+                let value = match field {
+                    0 => self.cpu.memory().ram[0x234],
+                    1 => self.cpu.memory().ram[0x235],
+                    2 => self.cpu.memory().ram[0x236],
+                    3 => self.cpu.memory().ram[0x237],
+                    4 => self.cpu.memory().ram[0x238],
+                    _ => 0,
+                };
+                SyscallResult::with_return(value)
+            }
+
+            // String syscalls
+            0xE050 => {
+                // strlen
+                let addr = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
+                let mut len = 0u8;
+                loop {
+                    if self.cpu.memory().read(addr + len as u16) == 0 {
+                        break;
+                    }
+                    len = len.wrapping_add(1);
+                    if len == 0 {
+                        break;
+                    }
+                }
+                SyscallResult::with_return(len)
+            }
+            0xE05C => {
+                // memcpy
+                let dst = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
+                let src = self.cpu.memory().read16(0x20);
+                let len = self.cpu.a() as u16;
+                for i in 0..len {
+                    let byte = self.cpu.memory().read(src + i);
+                    self.cpu.memory_mut().write(dst + i, byte);
+                }
+                SyscallResult::handled()
+            }
+            0xE05F => {
+                // memset
+                let dst = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
+                let value = self.cpu.a();
+                let len = self.cpu.memory().read(0x20) as u16;
+                for i in 0..len {
+                    self.cpu.memory_mut().write(dst + i, value);
+                }
+                SyscallResult::handled()
+            }
+
+            // System syscalls
+            0xE070 => {
+                // sys_init
+                self.lcd.clear();
+                self.input.clear_buffer();
+                self.audio.stop();
+                SyscallResult::handled()
+            }
+            0xE073 => {
+                // power_off
+                log::info!("Power off requested");
+                SyscallResult::handled()
+            }
+            0xE079 => {
+                // random
+                let seed = self.cpu.memory().ram[0x2000] as u16;
+                let seed = seed.wrapping_mul(25173).wrapping_add(13849);
+                self.cpu.memory_mut().ram[0x2000] = (seed >> 8) as u8;
+                SyscallResult::with_return((seed & 0xFF) as u8)
+            }
+            0x0260 => {
+                // brk_exit
+                log::info!("Game exited via BRK");
+                self.running = false;
+                SyscallResult::handled()
+            }
+
+            _ => {
+                // Unknown syscall
+                log::trace!("Unknown syscall at 0x{:04X}", target);
+                SyscallResult::not_handled()
+            }
+        }
     }
 
     /// Run one frame (~16.67ms at 60fps)
@@ -159,6 +389,9 @@ impl Emulator {
         while cycles_run < cycles_per_frame && self.running {
             cycles_run += self.step();
         }
+
+        // Update timers
+        self.cpu.memory_mut().update_timers();
 
         self.frame_count += 1;
     }
@@ -173,79 +406,178 @@ impl Emulator {
             self.debug.set_stepping(true);
         }
 
-        // Read the opcode
-        let opcode = self.memory.read(pc);
-
-        // Check for JSR instruction (0x20) - potential syscall
-        if opcode == 0x20 {
-            let target = self.memory.read16(pc + 1);
-            if self.syscalls.is_syscall(target) {
-                // Log syscall before creating context (to avoid borrow issues)
-                let cycles = self.cpu.cycles;
-                let name = self.syscalls.get(target).map_or("unknown", |e| e.name);
-                self.debug.log_syscall(cycles, target, name);
-
-                // Intercept the syscall
-                let mut ctx = SyscallContext {
-                    cpu: &mut self.cpu,
-                    memory: &mut self.memory,
-                    lcd: &mut self.lcd,
-                    input: &mut self.input,
-                    audio: &mut self.audio,
-                };
-
-                let result = self.syscalls.try_handle(target, &mut ctx);
-
-                if result.handled {
-                    // Skip the JSR instruction (3 bytes)
-                    self.cpu.set_pc(pc + 3);
-                    return 3; // Approximate cycles
-                }
-            }
-        }
-
-        // Check for BRK instruction (0x00)
+        // Check for BRK instruction (game exit)
+        let opcode = self.cpu.memory().read(pc);
         if opcode == 0x00 {
-            // BRK - check if it's our exit handler
             log::info!("BRK at 0x{:04X}, game exiting", pc);
             self.running = false;
             return 1;
         }
 
-        // Normal instruction execution
-        // TODO: Integrate with mos6502 crate
-        // For now, just advance PC
-        self.cpu.set_pc(pc + 1);
-        self.cpu.cycles += 1;
+        // Check for JSR instruction - potential syscall
+        if opcode == 0x20 {
+            let target = self.cpu.memory().read16(pc + 1);
 
-        1
+            // Check if target is in OS ROM space (0xE000-0xFFFF)
+            // or if it's a known syscall address
+            if self.syscalls.is_syscall(target) || (target >= 0xE000 && target <= 0xFFFF) {
+                // Handle syscall by directly implementing the common ones
+                let result = self.handle_syscall(target);
+
+                if result.handled {
+                    // Skip the JSR instruction (3 bytes)
+                    self.cpu.set_pc(pc + 3);
+
+                    // Set return value if provided
+                    if let Some(val) = result.return_value {
+                        self.cpu.set_a(val);
+                    }
+
+                    return 3; // Approximate cycles
+                }
+            }
+        }
+
+        // Execute the instruction normally
+        let cycles = self.cpu.step();
+
+        // Handle interrupts
+        self.handle_interrupts();
+
+        cycles
+    }
+
+    /// Handle pending interrupts
+    fn handle_interrupts(&mut self) {
+        let isr = self.cpu.memory().ram[0x04]; // ISR register
+        let ier = self.cpu.memory().ram[0x23A]; // IER register
+        let tisr = self.cpu.memory().ram[0x05]; // TISR register
+        let tier = self.cpu.memory().ram[0x23B]; // TIER register
+        let status = self.cpu.status();
+
+        // Check if interrupts are disabled
+        if status & 0x04 != 0 {
+            return;
+        }
+
+        // Check for keyboard interrupt (PI)
+        if (isr & 0x80) != 0 && (ier & 0x80) != 0 {
+            self.trigger_interrupt(0x02);
+            self.cpu.memory_mut().ram[0x04] &= 0x7F; // Clear PI flag
+            return;
+        }
+
+        // Check for timer interrupts
+        if (tisr & 0x01) != 0 && (tier & 0x01) != 0 {
+            self.trigger_interrupt(0x03); // ST1
+            self.cpu.memory_mut().ram[0x05] &= 0xFE;
+            return;
+        }
+        if (tisr & 0x02) != 0 && (tier & 0x02) != 0 {
+            self.trigger_interrupt(0x04); // ST2
+            self.cpu.memory_mut().ram[0x05] &= 0xFD;
+            return;
+        }
+        if (tisr & 0x04) != 0 && (tier & 0x04) != 0 {
+            self.trigger_interrupt(0x05); // ST3
+            self.cpu.memory_mut().ram[0x05] &= 0xFB;
+            return;
+        }
+        if (tisr & 0x08) != 0 && (tier & 0x08) != 0 {
+            self.trigger_interrupt(0x06); // ST4
+            self.cpu.memory_mut().ram[0x05] &= 0xF7;
+            return;
+        }
+
+        // Check for alarm interrupt
+        if (isr & 0x01) != 0 && (ier & 0x01) != 0 {
+            self.trigger_interrupt(0x13); // ALM
+            return;
+        }
+
+        // Check for counter interrupt
+        if (isr & 0x02) != 0 && (ier & 0x02) != 0 {
+            self.trigger_interrupt(0x12); // CT
+            return;
+        }
+    }
+
+    /// Trigger an interrupt
+    fn trigger_interrupt(&mut self, vector_idx: u8) {
+        // Push PC and status to stack
+        let pc = self.cpu.pc();
+        let status = self.cpu.status();
+        let sp = self.cpu.sp();
+
+        // Write to stack
+        self.cpu.memory_mut().ram[0x100 | sp as usize] = (pc >> 8) as u8;
+        self.cpu.memory_mut().ram[0x100 | sp.wrapping_sub(1) as usize] = (pc & 0xFF) as u8;
+        self.cpu.memory_mut().ram[0x100 | sp.wrapping_sub(2) as usize] = status;
+        self.cpu.set_sp(sp.wrapping_sub(3));
+
+        // Read vector address (at 0x0300 + idx * 4)
+        let vector_addr = 0x0300 + (vector_idx as u16) * 4;
+        let lo = self.cpu.memory().ram[vector_addr as usize] as u16;
+        let hi = self.cpu.memory().ram[(vector_addr + 1) as usize] as u16;
+        let target = (hi << 8) | lo;
+
+        self.cpu.set_pc(target);
     }
 
     /// Handle key down event
     pub fn key_down(&mut self, key: BbkKey) {
-        self.input.key_down(key, self.frame_count * 16); // Approximate timestamp
+        let code = key as u8;
+        self.cpu.memory_mut().ram[0x24E] = code | 0x80; // KEYCODE register
+        self.cpu.memory_mut().ram[0x04] |= 0x80; // Set PI flag in ISR
+        self.input.key_down(key, self.frame_count * 16);
     }
 
     /// Handle key up event
     pub fn key_up(&mut self) {
+        self.cpu.memory_mut().ram[0x24E] = 0;
         self.input.key_up();
     }
 
     /// Get the LCD framebuffer
     pub fn get_framebuffer(&self) -> &[bool; 159 * 96] {
-        // TODO: Return actual framebuffer
+        // TODO: Return actual framebuffer from RAM
         static FB: [bool; 159 * 96] = [false; 159 * 96];
         &FB
     }
 
     /// Render LCD to RGB565 buffer
-    pub fn render_lcd(&mut self, buf: &mut [u16], ghosting: bool) {
+    pub fn render_lcd(&mut self, buf: &mut [u16], _ghosting: bool) {
+        // Copy first byte
+        self.cpu.memory_mut().ram[0x400] = self.cpu.memory().ram[0x1000];
+
+        // Read framebuffer from RAM at 0x0400
+        let ram = &self.cpu.memory().ram;
+        let mut pixels = [false; 159 * 96];
+
+        // LCD framebuffer layout
+        let mut v = 0x400;
+
+        for j in (0..96).rev() {
+            for i in 1..20 {
+                let byte = ram[v];
+                for bit in 0..8 {
+                    let x = i * 8 + bit;
+                    let y = j;
+                    if x < 159 && y < 96 {
+                        pixels[y * 159 + x] = (byte & (1 << (7 - bit))) != 0;
+                    }
+                }
+                v += 1;
+            }
+            v += 13; // Skip padding
+        }
+
+        // Render with theme
         use crate::lcd::LcdTheme;
-        let theme = LcdTheme::GREY; // TODO: Make configurable
-        if ghosting {
-            self.lcd.render_with_ghosting(buf, &theme);
-        } else {
-            self.lcd.render(buf, &theme);
+        let theme = LcdTheme::GREY;
+
+        for i in 0..159 * 96 {
+            buf[i] = if pixels[i] { theme.fg } else { theme.bg };
         }
     }
 
@@ -272,8 +604,8 @@ impl Emulator {
     /// Create a save state
     pub fn save_state(&self) -> SaveState {
         SaveState {
-            ram: self.memory.ram().to_vec(),
-            flash: self.memory.flash[..0x14000].to_vec(), // Save area only
+            ram: self.cpu.memory().ram.to_vec(),
+            flash: self.cpu.memory().flash[..0x14000].to_vec(),
             cpu: crate::save::CpuState {
                 pc: self.cpu.pc(),
                 sp: self.cpu.sp(),
@@ -281,11 +613,11 @@ impl Emulator {
                 x: self.cpu.x(),
                 y: self.cpu.y(),
                 status: self.cpu.status(),
-                cycles: self.cpu.cycles,
+                cycles: self.cpu.cycles(),
             },
             bank_switch: crate::save::BankState {
-                banks: vec![0; 16], // TODO: Get actual bank state
-                selected: 0,
+                banks: self.cpu.memory().bank_switch.banks.to_vec(),
+                selected: self.cpu.memory().bank_switch.selected(),
             },
             bank_sys_d: self.model.bank_sys_d,
         }
@@ -293,12 +625,11 @@ impl Emulator {
 
     /// Load a save state
     pub fn load_save_state(&mut self, state: &SaveState) -> Result<()> {
-        self.memory.ram_mut().copy_from_slice(&state.ram);
-        let len = state.flash.len().min(self.memory.flash.len());
-        self.memory.flash[..len].copy_from_slice(&state.flash[..len]);
+        self.cpu.memory_mut().ram.copy_from_slice(&state.ram);
+        let len = state.flash.len().min(self.cpu.memory().flash.len());
+        self.cpu.memory_mut().flash[..len].copy_from_slice(&state.flash[..len]);
         self.cpu.set_pc(state.cpu.pc);
         self.cpu.set_sp(state.cpu.sp);
-        self.cpu.cycles = state.cpu.cycles;
         Ok(())
     }
 

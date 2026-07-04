@@ -1,4 +1,4 @@
-//! System call dispatcher
+//! System call dispatcher for HLE mode
 
 use std::collections::HashMap;
 
