@@ -81,9 +81,10 @@ fn main() -> Result<()> {
     }
 
     // Run OS initialization if ROM is loaded
-    if has_rom {
-        emu.run_os_init();
-    }
+    // Skip for now - bank table is set up manually in load_gam
+    // if has_rom {
+    //     emu.run_os_init();
+    // }
 
     // Load game
     let game_data = fs::read(&cli.game)?;

@@ -107,6 +107,17 @@ impl Emulator {
         self.cpu.memory_mut().bank_switch.set(0xB, data_bank + 2);
         self.cpu.memory_mut().bank_switch.set(0xC, data_bank + 3);
 
+        // Setup OS ROM bank (bank 0xD -> OS ROM)
+        // For 4980 model: 0x0EA8, for 4988: 0x0E88
+        let os_bank = match self.model.bank_sys_d {
+            0x0EA8 => 0x0EA8u32, // 4980
+            0x0E88 => 0x0E88u32, // 4988
+            _ => 0x0EA8u32,      // default to 4980
+        };
+        self.cpu.memory_mut().bank_switch.set(0xD, os_bank);
+        self.cpu.memory_mut().bank_switch.set(0xE, os_bank + 1);
+        self.cpu.memory_mut().bank_switch.set(0xF, os_bank + 2);
+
         // Setup save area
         let save_base = 0x7000; // 4980
         self.cpu.memory_mut().flash[flash_base + save_base + 0xF8] = 0x02;
@@ -394,6 +405,153 @@ impl Emulator {
                 SyscallResult::handled()
             }
 
+            // BBK OS functions (4980 model)
+            // 0xD2F6: Draw character/string
+            // Parameters: A=character/data, X=mode/font, [0x26:0x27]=address pointer
+            0xD2F6 => {
+                let ch = self.cpu.a();
+                let mode = self.cpu.x();
+                let addr = self.cpu.memory().ram[0x26] as u16 | (self.cpu.memory().ram[0x27] as u16) << 8;
+
+                // Draw character to LCD framebuffer
+                // The LCD framebuffer is at 0x0400-0x0FFF
+                // We need to write the character pattern to the framebuffer
+                // For now, just write the character code to the address
+                if addr >= 0x0400 && addr < 0x1000 {
+                    self.cpu.memory_mut().ram[addr as usize] = ch;
+                }
+
+                // Also update the cursor position
+                self.lcd.set_cursor((addr & 0xFF) as u8, ((addr >> 8) & 0xFF) as u8);
+
+                SyscallResult::handled()
+            }
+
+            // 0xDACA: Set cursor position or draw at position
+            // Parameters: A=value, [0x20:0x21]=position
+            0xDACA => {
+                let value = self.cpu.a();
+                let pos = self.cpu.memory().ram[0x20] as u16 | (self.cpu.memory().ram[0x21] as u16) << 8;
+
+                // Set cursor position
+                self.lcd.set_cursor((pos & 0xFF) as u8, ((pos >> 8) & 0xFF) as u8);
+
+                // If value is non-zero, draw it
+                if value != 0 {
+                    self.lcd.draw_char(value, &crate::lcd::FontData::new(8, 8));
+                }
+
+                SyscallResult::handled()
+            }
+
+            // 0xD340: Draw string or block
+            // Parameters: [0x20:0x21]=source address, [0x26:0x27]=dest address
+            0xD340 => {
+                let src = self.cpu.memory().ram[0x20] as u16 | (self.cpu.memory().ram[0x21] as u16) << 8;
+                let dst = self.cpu.memory().ram[0x26] as u16 | (self.cpu.memory().ram[0x27] as u16) << 8;
+
+                // Copy data from src to dst
+                // This is likely used for drawing strings or blocks
+                for i in 0..32 {
+                    let byte = self.cpu.memory().read(src + i);
+                    if byte == 0 {
+                        break;
+                    }
+                    if dst + i >= 0x0400 && dst + i < 0x1000 {
+                        self.cpu.memory_mut().ram[(dst + i) as usize] = byte;
+                    }
+                }
+
+                SyscallResult::handled()
+            }
+
+            // 0xD300: Clear screen area
+            0xD300 => {
+                // Clear LCD framebuffer
+                for i in 0x0400..0x1000 {
+                    self.cpu.memory_mut().ram[i] = 0;
+                }
+                SyscallResult::handled()
+            }
+
+            // 0xD320: Draw horizontal line
+            0xD320 => {
+                let y = self.cpu.a();
+                let x1 = self.cpu.x();
+                let x2 = self.cpu.y();
+
+                // Draw horizontal line at y from x1 to x2
+                for x in x1..=x2 {
+                    self.lcd.set_pixel(x, y, true);
+                }
+
+                SyscallResult::handled()
+            }
+
+            // 0xD360: Draw vertical line
+            0xD360 => {
+                let x = self.cpu.a();
+                let y1 = self.cpu.x();
+                let y2 = self.cpu.y();
+
+                // Draw vertical line at x from y1 to y2
+                for y in y1..=y2 {
+                    self.lcd.set_pixel(x, y, true);
+                }
+
+                SyscallResult::handled()
+            }
+
+            // 0xD380: Fill rectangle
+            0xD380 => {
+                let x = self.cpu.memory().ram[0x20];
+                let y = self.cpu.memory().ram[0x21];
+                let w = self.cpu.memory().ram[0x22];
+                let h = self.cpu.memory().ram[0x23];
+
+                // Fill rectangle
+                for dy in 0..h {
+                    for dx in 0..w {
+                        self.lcd.set_pixel(x + dx, y + dy, true);
+                    }
+                }
+
+                SyscallResult::handled()
+            }
+
+            // 0xD3A0: Get key input
+            0xD3A0 => {
+                let key = self.input.get_key();
+                SyscallResult::with_return(key)
+            }
+
+            // 0xD3C0: Check key hit
+            0xD3C0 => {
+                let has_key = self.input.key_hit();
+                SyscallResult::with_return(if has_key { 1 } else { 0 })
+            }
+
+            // 0xD400: Play sound
+            0xD400 => {
+                let freq = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
+                let duration = self.cpu.a() as u16;
+                if freq > 0 {
+                    self.audio.play_tone(freq, duration * 10);
+                }
+                SyscallResult::handled()
+            }
+
+            // 0xD420: Delay/wait
+            0xD420 => {
+                let ms = self.cpu.a() as u32;
+                // Just consume some cycles
+                SyscallResult {
+                    handled: true,
+                    return_value: None,
+                    cycles: ms * 4000,
+                }
+            }
+
             _ => {
                 // Unknown syscall - log it for debugging
                 log::info!("Unknown syscall at 0x{:04X}", target);
@@ -431,7 +589,7 @@ impl Emulator {
         // Check for BRK instruction (game exit)
         let opcode = self.cpu.memory().read(pc);
         if opcode == 0x00 {
-            log::info!("BRK at 0x{:04X}, game exiting", pc);
+            log::info!("BRK at 0x{:04X} SP=0x{:02X}, game exiting", pc, self.cpu.sp());
             self.running = false;
             return 1;
         }
@@ -442,27 +600,19 @@ impl Emulator {
 
             // Check if target is in OS/system area (0xD000-0xFFFF)
             // or if it's a known syscall address
-            if self.syscalls.is_syscall(target) || (target >= 0xD000) {
-                // Handle syscall by directly implementing the common ones
+            if self.syscalls.is_syscall(target) {
+                // Only intercept explicitly registered syscalls
                 let result = self.handle_syscall(target);
 
                 if result.handled {
-                    // Skip the JSR instruction (3 bytes)
                     self.cpu.set_pc(pc + 3);
-
-                    // Set return value if provided
                     if let Some(val) = result.return_value {
                         self.cpu.set_a(val);
                     }
-
-                    return 3; // Approximate cycles
-                } else {
-                    // Unknown syscall - skip the call and return
-                    log::info!("Skipping unknown syscall at 0x{:04X}", target);
-                    self.cpu.set_pc(pc + 3);
                     return 3;
                 }
             }
+            // All other JSR calls (including OS ROM) execute normally
         }
 
         // Execute the instruction normally

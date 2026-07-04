@@ -89,7 +89,7 @@ impl Lcd {
                     }
                 }
             }
-            self.cursor_x += font.width;
+            self.cursor_x = self.cursor_x.saturating_add(font.width);
         }
     }
 
