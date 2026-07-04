@@ -563,10 +563,51 @@ impl Memory {
 
 impl Bus for Memory {
     fn get_byte(&mut self, address: u16) -> u8 {
-        self.read(address)
+        let value = self.read(address);
+        if (registers::DATA1..=registers::DATA4).contains(&address) {
+            let channel = (address - registers::DATA1) as usize;
+            if self.ram[registers::INCR as usize] & (1 << channel) != 0 {
+                self.increment_address(channel);
+            }
+        }
+        value
     }
 
     fn set_byte(&mut self, address: u16, value: u8) {
         self.write(address, value);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn direct_bus_reads_advance_enabled_channel() {
+        let mut memory = Memory::new();
+        memory.init();
+        memory.ram[registers::ADDR1L as usize] = 0x00;
+        memory.ram[registers::ADDR1M as usize] = 0x01;
+        memory.ram[registers::ADDR1H as usize] = 0x00;
+        memory.ram[0x100] = 0x12;
+        memory.ram[0x101] = 0x34;
+
+        assert_eq!(Bus::get_byte(&mut memory, registers::DATA1), 0x12);
+        assert_eq!(Bus::get_byte(&mut memory, registers::DATA1), 0x34);
+        assert_eq!(memory.ram[registers::ADDR1L as usize], 0x02);
+    }
+
+    #[test]
+    fn direct_bus_reads_do_not_advance_disabled_channel() {
+        let mut memory = Memory::new();
+        memory.init();
+        memory.ram[registers::INCR as usize] = 0;
+        memory.ram[registers::ADDR1L as usize] = 0x00;
+        memory.ram[registers::ADDR1M as usize] = 0x01;
+        memory.ram[0x100] = 0x56;
+
+        assert_eq!(Bus::get_byte(&mut memory, registers::DATA1), 0x56);
+        assert_eq!(Bus::get_byte(&mut memory, registers::DATA1), 0x56);
+        assert_eq!(memory.ram[registers::ADDR1L as usize], 0x00);
     }
 }
