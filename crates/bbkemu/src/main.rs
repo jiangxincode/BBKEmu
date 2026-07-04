@@ -34,6 +34,10 @@ struct Cli {
     #[arg(short = 'e', long)]
     rome: Option<PathBuf>,
 
+    /// Force HLE mode without loading the OS ROM
+    #[arg(long, conflicts_with = "rome")]
+    hle: bool,
+
     /// Display scale factor
     #[arg(short, long, default_value = "4", value_parser = clap::value_parser!(u32).range(1..=16))]
     scale: u32,
@@ -68,7 +72,11 @@ fn main() -> Result<()> {
     } else {
         log::LevelFilter::Info
     };
-    env_logger::Builder::new().filter_level(log_level).init();
+    env_logger::Builder::new()
+        .filter_level(log::LevelFilter::Warn)
+        .filter_module("bbkemu", log_level)
+        .filter_module("bbkemu_core", log_level)
+        .init();
 
     log::info!("BBKEmu starting...");
 
@@ -108,7 +116,7 @@ fn main() -> Result<()> {
     if let Some(path) = &cli.rome {
         let data = fs::read(path)?;
         emu.load_rom_e(&data);
-    } else {
+    } else if !cli.hle {
         let default_paths = [
             "tmp/gam4980/retroarch/system/gam4980/E.BIN",
             "system/gam4980/E.BIN",

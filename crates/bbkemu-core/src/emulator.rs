@@ -482,21 +482,24 @@ impl Emulator {
             // 0xDACA: Set cursor position
             // Parameters: A=value, [0x20:0x21]=position in LCD coordinates
             0xDACA => {
-                let _value = self.cpu.a();
-                let x = self.cpu.memory().ram[0x20];
-                let y = self.cpu.memory().ram[0x21];
+                let stack = self.cpu.memory().read16(0x28).wrapping_sub(2);
+                let lo = self.cpu.memory().read(0x20);
+                let hi = self.cpu.memory().read(0x21);
+                self.cpu.memory_mut().write(0x28, stack as u8);
+                self.cpu.memory_mut().write(0x29, (stack >> 8) as u8);
+                self.cpu.memory_mut().write(stack, lo);
+                self.cpu.memory_mut().write(stack.wrapping_add(1), hi);
 
-                // Store the position for later use
-                // The position is in LCD pixel coordinates
-                // We need to convert to framebuffer address
-                // Framebuffer is 20 bytes per row, 96 rows
-                // Each byte represents 8 pixels
-                let fb_addr = (y as u16) * 20 + (x as u16) / 8;
+                SyscallResult::handled()
+            }
 
-                // Store the framebuffer address at 0x28:0x29 for later use
-                self.cpu.memory_mut().ram[0x28] = (fb_addr & 0xFF) as u8;
-                self.cpu.memory_mut().ram[0x29] = ((fb_addr >> 8) & 0xFF) as u8;
-
+            // Push A onto the compiler-managed software stack.
+            0xDAAA => {
+                let stack = self.cpu.memory().read16(0x28).wrapping_sub(1);
+                let value = self.cpu.a();
+                self.cpu.memory_mut().write(0x28, stack as u8);
+                self.cpu.memory_mut().write(0x29, (stack >> 8) as u8);
+                self.cpu.memory_mut().write(stack, value);
                 SyscallResult::handled()
             }
 
@@ -664,6 +667,17 @@ impl Emulator {
         // Check for JSR instruction - potential syscall
         if opcode == 0x20 {
             let target = self.cpu.memory().read16(pc + 1);
+            if target >= 0xD000 {
+                let ram = &self.cpu.memory().ram;
+                log::debug!(
+                    "OS call caller=0x{pc:04X} target=0x{target:04X} physical=0x{:06X} A={:02X} X={:02X} Y={:02X} ZP20={:02X?}",
+                    self.cpu.memory().bank_switch.translate(target),
+                    self.cpu.a(),
+                    self.cpu.x(),
+                    self.cpu.y(),
+                    &ram[0x20..0x30]
+                );
+            }
 
             // Check if target is in OS/system area (0xD000-0xFFFF)
             // or if it's a known syscall address

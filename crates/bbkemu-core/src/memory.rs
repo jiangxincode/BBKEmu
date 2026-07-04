@@ -176,9 +176,9 @@ impl Memory {
         // Set default INCR register (auto-increment for all 4 channels)
         self.ram[registers::INCR as usize] = 0x0F;
 
-        // Initialize bank 0x03 to point to OS ROM vector area
-        // This is where interrupt vectors are stored
-        self.bank_switch.set(0x03, 0x0E); // Maps to 0xE000 area
+        for bank in 1..=4 {
+            self.bank_switch.set(bank, bank as u32);
+        }
     }
 
     /// Load font ROM (8.BIN) - optional
