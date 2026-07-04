@@ -2,6 +2,7 @@
 
 use mos6502::cpu::CPU;
 use mos6502::instruction::Nmos6502;
+use mos6502::memory::Bus;
 
 use crate::memory::Memory;
 

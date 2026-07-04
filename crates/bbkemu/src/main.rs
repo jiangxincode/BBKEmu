@@ -51,6 +51,8 @@ fn main() -> Result<()> {
     };
     env_logger::Builder::new().filter_level(log_level).init();
 
+    log::info!("BBKEmu starting...");
+
     // Select model
     let bbk_model: &'static BbkModel = match cli.model.as_str() {
         "4980" => &model::MODEL_4980,
@@ -61,8 +63,9 @@ fn main() -> Result<()> {
         }
     };
 
-    // Create emulator
+    log::info!("Creating emulator...");
     let mut emu = Emulator::new(bbk_model);
+    log::info!("Emulator created");
 
     // Load optional ROMs
     let mut has_rom = false;

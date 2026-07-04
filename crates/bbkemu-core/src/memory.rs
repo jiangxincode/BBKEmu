@@ -141,13 +141,13 @@ enum FlashCmd {
 /// Main memory bus
 pub struct Memory {
     /// RAM (32 KiB)
-    pub ram: [u8; RAM_SIZE],
+    pub ram: Vec<u8>,
     /// Flash (2 MiB)
-    pub flash: [u8; FLASH_SIZE],
+    pub flash: Vec<u8>,
     /// Font ROM (2 MiB, optional - loaded from 8.BIN)
-    pub rom_8: Option<[u8; ROM8_SIZE]>,
+    pub rom_8: Option<Vec<u8>>,
     /// OS ROM (2 MiB, optional - loaded from E.BIN, not needed for HLE)
-    pub rom_e: Option<[u8; ROME_SIZE]>,
+    pub rom_e: Option<Vec<u8>>,
     /// Bank switch controller
     pub bank_switch: BankSwitch,
     /// Flash command state
@@ -160,8 +160,8 @@ pub struct Memory {
 impl Memory {
     pub fn new() -> Self {
         Self {
-            ram: [0; RAM_SIZE],
-            flash: [0xFF; FLASH_SIZE],
+            ram: vec![0; RAM_SIZE],
+            flash: vec![0xFF; FLASH_SIZE],
             rom_8: None,
             rom_e: None,
             bank_switch: BankSwitch::new(),
@@ -183,7 +183,7 @@ impl Memory {
 
     /// Load font ROM (8.BIN) - optional
     pub fn load_rom_8(&mut self, data: &[u8]) {
-        let mut rom = [0u8; ROM8_SIZE];
+        let mut rom = vec![0u8; ROM8_SIZE];
         let len = data.len().min(ROM8_SIZE);
         rom[..len].copy_from_slice(&data[..len]);
         self.rom_8 = Some(rom);
@@ -191,7 +191,7 @@ impl Memory {
 
     /// Load OS ROM (E.BIN) - optional for HLE mode
     pub fn load_rom_e(&mut self, data: &[u8]) {
-        let mut rom = [0u8; ROME_SIZE];
+        let mut rom = vec![0u8; ROME_SIZE];
         let len = data.len().min(ROME_SIZE);
         rom[..len].copy_from_slice(&data[..len]);
         self.rom_e = Some(rom);
@@ -201,10 +201,10 @@ impl Memory {
     pub fn read(&self, addr: u16) -> u8 {
         match addr {
             // Page 0 - hardware registers
-            0x00..=0xFF => self.read_page0(addr),
-            // RAM
-            0x100..=0x7FFF => self.ram[addr as usize],
-            // High addresses accessed via bank switching
+            0x0000..=0x00FF => self.read_page0(addr),
+            // Pages 1-15: direct RAM (0x0100-0x0FFF)
+            0x0100..=0x0FFF => self.ram[addr as usize],
+            // Pages 16-255: bank-switched (0x1000-0xFFFF)
             _ => {
                 let paddr = self.bank_switch.translate(addr);
                 self.read_physical(paddr)
@@ -215,8 +215,8 @@ impl Memory {
     /// Write a byte to memory
     pub fn write(&mut self, addr: u16, val: u8) {
         match addr {
-            0x00..=0xFF => self.write_page0(addr, val),
-            0x100..=0x7FFF => {
+            0x0000..=0x00FF => self.write_page0(addr, val),
+            0x0100..=0x0FFF => {
                 self.write_ram(addr, val);
             }
             _ => {
@@ -352,7 +352,7 @@ impl Memory {
     }
 
     /// Read from physical address
-    fn read_physical(&self, addr: u32) -> u8 {
+    pub fn read_physical(&self, addr: u32) -> u8 {
         if addr < 0x8000 {
             // RAM
             self.ram[addr as usize]
@@ -394,9 +394,15 @@ impl Memory {
     fn read_flash(&self, addr: u32) -> u8 {
         match self.flash_cmd {
             FlashCmd::Normal | FlashCmd::ByteProgram => {
-                // Rotate last 32KiB to the front for save
-                let addr = (addr + 0x8000) % FLASH_SIZE as u32;
-                self.flash[addr as usize]
+                // For save area (last 32KiB), rotate to front
+                // Otherwise, read directly
+                let actual_addr = if addr >= FLASH_SIZE as u32 - 0x8000 {
+                    // Save area: rotate last 32KiB to front
+                    (addr + 0x8000) % FLASH_SIZE as u32
+                } else {
+                    addr
+                };
+                self.flash[actual_addr as usize]
             }
             FlashCmd::SoftwareId => {
                 // Return software ID
@@ -545,12 +551,12 @@ impl Memory {
     }
 
     /// Get RAM slice for save states
-    pub fn ram(&self) -> &[u8; RAM_SIZE] {
+    pub fn ram(&self) -> &[u8] {
         &self.ram
     }
 
     /// Get mutable RAM slice
-    pub fn ram_mut(&mut self) -> &mut [u8; RAM_SIZE] {
+    pub fn ram_mut(&mut self) -> &mut [u8] {
         &mut self.ram
     }
 }

@@ -128,6 +128,28 @@ impl Emulator {
         // Set PC to game entry point
         self.cpu.set_pc(gam.entry_point);
 
+        // Debug: check what's at the entry point
+        let entry_opcode = self.cpu.memory().read(gam.entry_point);
+        log::info!("Entry point 0x{:04X} opcode: 0x{:02X}", gam.entry_point, entry_opcode);
+
+        // Debug: check bank mapping
+        let bank5 = self.cpu.memory().bank_switch.banks[5];
+        log::info!("Bank 5 mapped to: 0x{:04X}", bank5);
+
+        // Debug: check flash content at expected location
+        let flash_offset = 0xD000 + (gam.entry_point & 0x0FFF) as usize;
+        if flash_offset < self.cpu.memory().flash.len() {
+            log::info!("Flash[0x{:04X}] = 0x{:02X}", flash_offset, self.cpu.memory().flash[flash_offset]);
+        }
+
+        // Debug: check physical address translation
+        let paddr = self.cpu.memory().bank_switch.translate(gam.entry_point);
+        log::info!("Physical address for 0x{:04X}: 0x{:08X}", gam.entry_point, paddr);
+
+        // Debug: check read_physical
+        let read_result = self.cpu.memory().read_physical(paddr);
+        log::info!("read_physical(0x{:08X}) = 0x{:02X}", paddr, read_result);
+
         self.running = true;
         log::info!("Game loaded, starting execution at 0x{:04X}", gam.entry_point);
 
@@ -373,8 +395,8 @@ impl Emulator {
             }
 
             _ => {
-                // Unknown syscall
-                log::trace!("Unknown syscall at 0x{:04X}", target);
+                // Unknown syscall - log it for debugging
+                log::info!("Unknown syscall at 0x{:04X}", target);
                 SyscallResult::not_handled()
             }
         }
@@ -418,9 +440,9 @@ impl Emulator {
         if opcode == 0x20 {
             let target = self.cpu.memory().read16(pc + 1);
 
-            // Check if target is in OS ROM space (0xE000-0xFFFF)
+            // Check if target is in OS/system area (0xD000-0xFFFF)
             // or if it's a known syscall address
-            if self.syscalls.is_syscall(target) || (target >= 0xE000 && target <= 0xFFFF) {
+            if self.syscalls.is_syscall(target) || (target >= 0xD000) {
                 // Handle syscall by directly implementing the common ones
                 let result = self.handle_syscall(target);
 
@@ -434,6 +456,11 @@ impl Emulator {
                     }
 
                     return 3; // Approximate cycles
+                } else {
+                    // Unknown syscall - skip the call and return
+                    log::info!("Skipping unknown syscall at 0x{:04X}", target);
+                    self.cpu.set_pc(pc + 3);
+                    return 3;
                 }
             }
         }
