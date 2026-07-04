@@ -73,6 +73,21 @@ fn main() -> Result<()> {
         let data = fs::read(path)?;
         emu.load_rom_8(&data);
         has_rom = true;
+    } else {
+        // Try to load font ROM from default location
+        let default_paths = [
+            "tmp/gam4980/retroarch/system/gam4980/8.BIN",
+            "system/gam4980/8.BIN",
+            "8.BIN",
+        ];
+        for path in &default_paths {
+            if let Ok(data) = fs::read(path) {
+                log::info!("Loading font ROM from {}", path);
+                emu.load_rom_8(&data);
+                has_rom = true;
+                break;
+            }
+        }
     }
     if let Some(path) = &cli.rome {
         let data = fs::read(path)?;

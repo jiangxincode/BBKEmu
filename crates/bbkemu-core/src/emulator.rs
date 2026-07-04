@@ -406,40 +406,61 @@ impl Emulator {
             }
 
             // BBK OS functions (4980 model)
-            // 0xD2F6: Draw character/string
-            // Parameters: A=character/data, X=mode/font, [0x26:0x27]=address pointer
+            // 0xD2F6: Draw character to LCD
+            // Parameters: A=character code, X=font/mode, [0x26:0x27]=pointer to position data
+            // The position data at [0x26:0x27] contains the LCD framebuffer address
             0xD2F6 => {
                 let ch = self.cpu.a();
-                let mode = self.cpu.x();
-                let addr = self.cpu.memory().ram[0x26] as u16 | (self.cpu.memory().ram[0x27] as u16) << 8;
+                let _mode = self.cpu.x();
+                let pos_addr = self.cpu.memory().ram[0x26] as u16 | (self.cpu.memory().ram[0x27] as u16) << 8;
 
-                // Draw character to LCD framebuffer
-                // The LCD framebuffer is at 0x0400-0x0FFF
-                // We need to write the character pattern to the framebuffer
-                // For now, just write the character code to the address
-                if addr >= 0x0400 && addr < 0x1000 {
-                    self.cpu.memory_mut().ram[addr as usize] = ch;
+                // Read the position from the pointer
+                let fb_addr = self.cpu.memory().read16(pos_addr) as usize;
+
+                // Copy font data to avoid borrow issues
+                let font_data: Option<[u8; 8]> = if let Some(ref rom) = self.cpu.memory().rom_8 {
+                    let font_offset = (ch as usize) * 8;
+                    if font_offset + 8 <= rom.len() {
+                        let mut data = [0u8; 8];
+                        data.copy_from_slice(&rom[font_offset..font_offset + 8]);
+                        Some(data)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                // Write font data to LCD framebuffer
+                if let Some(font) = font_data {
+                    for row in 0..8 {
+                        let fb_offset = fb_addr + row * 20; // 20 bytes per row
+                        if fb_offset < 0x1000 - 0x0400 {
+                            self.cpu.memory_mut().ram[0x0400 + fb_offset] = font[row];
+                        }
+                    }
                 }
-
-                // Also update the cursor position
-                self.lcd.set_cursor((addr & 0xFF) as u8, ((addr >> 8) & 0xFF) as u8);
 
                 SyscallResult::handled()
             }
 
-            // 0xDACA: Set cursor position or draw at position
-            // Parameters: A=value, [0x20:0x21]=position
+            // 0xDACA: Set cursor position
+            // Parameters: A=value, [0x20:0x21]=position in LCD coordinates
             0xDACA => {
-                let value = self.cpu.a();
-                let pos = self.cpu.memory().ram[0x20] as u16 | (self.cpu.memory().ram[0x21] as u16) << 8;
+                let _value = self.cpu.a();
+                let x = self.cpu.memory().ram[0x20];
+                let y = self.cpu.memory().ram[0x21];
 
-                // Set cursor position
-                self.lcd.set_cursor((pos & 0xFF) as u8, ((pos >> 8) & 0xFF) as u8);
+                // Store the position for later use
+                // The position is in LCD pixel coordinates
+                // We need to convert to framebuffer address
+                // Framebuffer is 20 bytes per row, 96 rows
+                // Each byte represents 8 pixels
+                let fb_addr = (y as u16) * 20 + (x as u16) / 8;
 
-                // If value is non-zero, draw it
-                if value != 0 {
-                    self.lcd.draw_char(value, &crate::lcd::FontData::new(8, 8));
-                }
+                // Store the framebuffer address at 0x28:0x29 for later use
+                self.cpu.memory_mut().ram[0x28] = (fb_addr & 0xFF) as u8;
+                self.cpu.memory_mut().ram[0x29] = ((fb_addr >> 8) & 0xFF) as u8;
 
                 SyscallResult::handled()
             }
@@ -451,7 +472,7 @@ impl Emulator {
                 let dst = self.cpu.memory().ram[0x26] as u16 | (self.cpu.memory().ram[0x27] as u16) << 8;
 
                 // Copy data from src to dst
-                // This is likely used for drawing strings or blocks
+                // This is used for copying screen regions or drawing blocks
                 for i in 0..32 {
                     let byte = self.cpu.memory().read(src + i);
                     if byte == 0 {
@@ -600,8 +621,8 @@ impl Emulator {
 
             // Check if target is in OS/system area (0xD000-0xFFFF)
             // or if it's a known syscall address
-            if self.syscalls.is_syscall(target) {
-                // Only intercept explicitly registered syscalls
+            // Intercept calls to OS area (0xD000+) or registered syscalls
+            if target >= 0xD000 || self.syscalls.is_syscall(target) {
                 let result = self.handle_syscall(target);
 
                 if result.handled {
@@ -610,9 +631,13 @@ impl Emulator {
                         self.cpu.set_a(val);
                     }
                     return 3;
+                } else {
+                    // Unknown OS function - skip and return
+                    self.cpu.set_pc(pc + 3);
+                    return 3;
                 }
             }
-            // All other JSR calls (including OS ROM) execute normally
+            // Other JSR calls execute normally
         }
 
         // Execute the instruction normally
