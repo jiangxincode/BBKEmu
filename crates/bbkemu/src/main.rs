@@ -1,12 +1,23 @@
 //! BBKEmu standalone frontend
 
 use std::fs;
+use std::num::NonZeroU32;
 use std::path::PathBuf;
+use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use clap::Parser;
 
-use bbkemu_core::{Emulator, BbkModel, model};
+use bbkemu_core::input::BbkKey;
+use bbkemu_core::{model, BbkModel, Emulator};
+use softbuffer::{Context, Surface};
+use winit::application::ApplicationHandler;
+use winit::dpi::LogicalSize;
+use winit::event::{ElementState, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::window::{Fullscreen, Window, WindowId};
 
 #[derive(Parser)]
 #[command(name = "bbkemu")]
@@ -24,7 +35,7 @@ struct Cli {
     rome: Option<PathBuf>,
 
     /// Display scale factor
-    #[arg(short, long, default_value = "4")]
+    #[arg(short, long, default_value = "4", value_parser = clap::value_parser!(u32).range(1..=16))]
     scale: u32,
 
     /// Start in fullscreen mode
@@ -43,9 +54,9 @@ struct Cli {
     #[arg(short, long, default_value = "output.bmp")]
     output: PathBuf,
 
-    /// Number of frames to run
-    #[arg(long, default_value = "60")]
-    frames: u64,
+    /// Run headless for this many frames and write --output
+    #[arg(long)]
+    frames: Option<u64>,
 }
 
 fn main() -> Result<()> {
@@ -107,39 +118,247 @@ fn main() -> Result<()> {
     log::info!("Game: {}", cli.game.display());
     log::info!("Scale: {}x", cli.scale);
 
-    // Run emulation
-    let target_fps = 60u64;
-    let frame_duration = std::time::Duration::from_micros(1_000_000 / target_fps);
+    if let Some(frames) = cli.frames {
+        run_headless(&mut emu, frames, &cli.output, cli.scale)?;
+        return Ok(());
+    }
 
-    log::info!("Running {} frames at {} FPS...", cli.frames, target_fps);
+    let event_loop = EventLoop::new()?;
+    event_loop.set_control_flow(ControlFlow::Wait);
+    let mut app = App::new(emu, cli.scale, cli.fullscreen);
+    event_loop.run_app(&mut app)?;
+    Ok(())
+}
 
-    for frame in 0..cli.frames {
-        let start = std::time::Instant::now();
-
-        // Run one frame
+fn run_headless(emu: &mut Emulator, frames: u64, output: &PathBuf, scale: u32) -> Result<()> {
+    for _ in 0..frames {
         emu.run_frame();
+    }
+    let lcd_buffer = emu.render_lcd_buffer();
+    save_bmp(output, &lcd_buffer, scale)?;
+    log::info!("Emulation complete after {} frames", emu.frame_count());
+    log::info!("Output saved to {}", output.display());
+    Ok(())
+}
 
-        // Frame timing
-        let elapsed = start.elapsed();
-        if elapsed < frame_duration {
-            std::thread::sleep(frame_duration - elapsed);
-        }
+struct App {
+    emu: Emulator,
+    scale: u32,
+    fullscreen: bool,
+    window: Option<Rc<Window>>,
+    context: Option<Context<Rc<Window>>>,
+    surface: Option<Surface<Rc<Window>, Rc<Window>>>,
+    next_frame: Instant,
+}
 
-        // Log progress every 60 frames
-        if frame % 60 == 0 {
-            log::info!("Frame {}: {} cycles", frame, emu.cpu.cycles());
+impl App {
+    fn new(emu: Emulator, scale: u32, fullscreen: bool) -> Self {
+        Self {
+            emu,
+            scale,
+            fullscreen,
+            window: None,
+            context: None,
+            surface: None,
+            next_frame: Instant::now(),
         }
     }
 
-    log::info!("Emulation complete. Frames: {}", emu.frame_count());
+    fn draw(&mut self) -> std::result::Result<(), String> {
+        let window = self.window.as_ref().expect("window must exist");
+        let surface = self.surface.as_mut().expect("surface must exist");
+        let size = window.inner_size();
+        let width = size.width.max(1);
+        let height = size.height.max(1);
+        surface
+            .resize(
+                NonZeroU32::new(width).unwrap(),
+                NonZeroU32::new(height).unwrap(),
+            )
+            .map_err(|error| error.to_string())?;
 
-    // Render final frame to BMP
-    let lcd_buffer = emu.render_lcd_buffer();
-    save_bmp(&cli.output, &lcd_buffer, cli.scale)?;
+        let pixels = self.emu.render_lcd_buffer();
+        let mut buffer = surface.buffer_mut().map_err(|error| error.to_string())?;
+        for y in 0..height as usize {
+            let source_y = y * 96 / height as usize;
+            for x in 0..width as usize {
+                let source_x = x * 159 / width as usize;
+                buffer[y * width as usize + x] = if pixels[source_y * 159 + source_x] {
+                    0x0014_1814
+                } else {
+                    0x00a8_b8a0
+                };
+            }
+        }
+        buffer.present().map_err(|error| error.to_string())?;
+        Ok(())
+    }
+}
 
-    log::info!("Output saved to {}", cli.output.display());
+impl ApplicationHandler for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.window.is_some() {
+            return;
+        }
+        let mut attributes = Window::default_attributes()
+            .with_title("BBKEmu")
+            .with_inner_size(LogicalSize::new(
+                (159 * self.scale) as f64,
+                (96 * self.scale) as f64,
+            ))
+            .with_min_inner_size(LogicalSize::new(159.0, 96.0));
+        if self.fullscreen {
+            attributes = attributes.with_fullscreen(Some(Fullscreen::Borderless(None)));
+        }
 
-    Ok(())
+        let window = match event_loop.create_window(attributes) {
+            Ok(window) => Rc::new(window),
+            Err(error) => {
+                log::error!("Failed to create window: {error}");
+                event_loop.exit();
+                return;
+            }
+        };
+        let context = match Context::new(window.clone()) {
+            Ok(context) => context,
+            Err(error) => {
+                log::error!("Failed to create display context: {error}");
+                event_loop.exit();
+                return;
+            }
+        };
+        let surface = match Surface::new(&context, window.clone()) {
+            Ok(surface) => surface,
+            Err(error) => {
+                log::error!("Failed to create display surface: {error}");
+                event_loop.exit();
+                return;
+            }
+        };
+        self.window = Some(window);
+        self.context = Some(context);
+        self.surface = Some(surface);
+        self.next_frame = Instant::now();
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        match event {
+            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::RedrawRequested => {
+                if let Err(error) = self.draw() {
+                    log::error!("Failed to render frame: {error}");
+                    event_loop.exit();
+                }
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                let PhysicalKey::Code(code) = event.physical_key else {
+                    return;
+                };
+                if code == KeyCode::F12 && event.state == ElementState::Pressed {
+                    let pixels = self.emu.render_lcd_buffer();
+                    let path = PathBuf::from("bbkemu-screenshot.bmp");
+                    match save_bmp(&path, &pixels, 1) {
+                        Ok(()) => log::info!("Screenshot saved to {}", path.display()),
+                        Err(error) => log::error!("Failed to save screenshot: {error}"),
+                    }
+                    return;
+                }
+                if code == KeyCode::Escape && event.state == ElementState::Pressed {
+                    event_loop.exit();
+                    return;
+                }
+                if let Some(key) = map_key(code) {
+                    match event.state {
+                        ElementState::Pressed => self.emu.key_down(key),
+                        ElementState::Released => self.emu.key_up(),
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let now = Instant::now();
+        if now >= self.next_frame {
+            self.emu.run_frame();
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+            self.next_frame = now + Duration::from_micros(16_667);
+        }
+        event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_frame));
+    }
+}
+
+fn map_key(code: KeyCode) -> Option<BbkKey> {
+    Some(match code {
+        KeyCode::ArrowUp => BbkKey::Up,
+        KeyCode::ArrowDown => BbkKey::Down,
+        KeyCode::ArrowLeft => BbkKey::Left,
+        KeyCode::ArrowRight => BbkKey::Right,
+        KeyCode::Enter => BbkKey::Enter,
+        KeyCode::Backspace => BbkKey::Exit,
+        KeyCode::Delete => BbkKey::Del,
+        KeyCode::Space => BbkKey::Space,
+        KeyCode::PageUp => BbkKey::PgUp,
+        KeyCode::PageDown => BbkKey::PgDn,
+        KeyCode::Digit0 => BbkKey::Key0,
+        KeyCode::Digit1 => BbkKey::Key1,
+        KeyCode::Digit2 => BbkKey::Key2,
+        KeyCode::Digit3 => BbkKey::Key3,
+        KeyCode::Digit4 => BbkKey::Key4,
+        KeyCode::Digit5 => BbkKey::Key5,
+        KeyCode::Digit6 => BbkKey::Key6,
+        KeyCode::Digit7 => BbkKey::Key7,
+        KeyCode::Digit8 => BbkKey::Key8,
+        KeyCode::Digit9 => BbkKey::Key9,
+        KeyCode::KeyQ => BbkKey::Q,
+        KeyCode::KeyW => BbkKey::W,
+        KeyCode::KeyE => BbkKey::E,
+        KeyCode::KeyR => BbkKey::R,
+        KeyCode::KeyT => BbkKey::T,
+        KeyCode::KeyY => BbkKey::Y,
+        KeyCode::KeyU => BbkKey::U,
+        KeyCode::KeyI => BbkKey::I,
+        KeyCode::KeyO => BbkKey::O,
+        KeyCode::KeyP => BbkKey::P,
+        KeyCode::KeyA => BbkKey::A,
+        KeyCode::KeyS => BbkKey::S,
+        KeyCode::KeyD => BbkKey::D,
+        KeyCode::KeyF => BbkKey::F,
+        KeyCode::KeyG => BbkKey::G,
+        KeyCode::KeyH => BbkKey::H,
+        KeyCode::KeyJ => BbkKey::J,
+        KeyCode::KeyK => BbkKey::K,
+        KeyCode::KeyL => BbkKey::L,
+        KeyCode::KeyZ => BbkKey::Z,
+        KeyCode::KeyX => BbkKey::X,
+        KeyCode::KeyC => BbkKey::C,
+        KeyCode::KeyV => BbkKey::V,
+        KeyCode::KeyB => BbkKey::B,
+        KeyCode::KeyN => BbkKey::N,
+        KeyCode::KeyM => BbkKey::M,
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_navigation_and_action_keys() {
+        assert_eq!(map_key(KeyCode::ArrowUp), Some(BbkKey::Up));
+        assert_eq!(map_key(KeyCode::Enter), Some(BbkKey::Enter));
+        assert_eq!(map_key(KeyCode::Backspace), Some(BbkKey::Exit));
+    }
+
+    #[test]
+    fn leaves_unmapped_host_keys_available_to_frontend() {
+        assert_eq!(map_key(KeyCode::F1), None);
+        assert_eq!(map_key(KeyCode::Escape), None);
+    }
 }
 
 fn save_bmp(path: &PathBuf, pixels: &[bool; 159 * 96], scale: u32) -> Result<()> {
@@ -147,7 +366,9 @@ fn save_bmp(path: &PathBuf, pixels: &[bool; 159 * 96], scale: u32) -> Result<()>
     let height = 96 * scale;
 
     // BMP file format
-    let file_size = 54 + (width * height * 3) as u32;
+    let row_size = width * 3;
+    let row_stride = (row_size + 3) & !3;
+    let file_size = 54 + row_stride * height;
     let mut bmp = Vec::with_capacity(file_size as usize);
 
     // BMP header
@@ -183,8 +404,7 @@ fn save_bmp(path: &PathBuf, pixels: &[bool; 159 * 96], scale: u32) -> Result<()>
                 }
             }
             // Pad to 4-byte boundary
-            let row_size = (width * 3) as usize;
-            let padding = (4 - (row_size % 4)) % 4;
+            let padding = (row_stride - row_size) as usize;
             bmp.extend_from_slice(&vec![0u8; padding]);
         }
     }

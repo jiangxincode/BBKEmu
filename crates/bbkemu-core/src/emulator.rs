@@ -2,17 +2,17 @@
 
 use anyhow::Result;
 
-use crate::cpu::CpuWrapper;
-use crate::memory::Memory;
-use crate::lcd::Lcd;
-use crate::input::{Input, BbkKey};
 use crate::audio::Audio;
-use crate::syscall::{SyscallContext, SyscallTable};
-use crate::syscalls;
-use crate::gam::GamFile;
+use crate::cpu::CpuWrapper;
 use crate::debug::Debugger;
+use crate::gam::GamFile;
+use crate::input::{BbkKey, Input};
+use crate::lcd::Lcd;
+use crate::memory::Memory;
 use crate::model::{BbkModel, MODEL_4980};
 use crate::save::SaveState;
+use crate::syscall::{SyscallContext, SyscallTable};
+use crate::syscalls;
 
 /// Main emulator struct
 pub struct Emulator {
@@ -65,7 +65,11 @@ impl Emulator {
     /// Load a GAM file
     pub fn load_gam(&mut self, data: &[u8]) -> Result<()> {
         let gam = GamFile::parse(data)?;
-        log::info!("Loading game: {} (entry: 0x{:04X})", gam.name(), gam.entry_point);
+        log::info!(
+            "Loading game: {} (entry: 0x{:04X})",
+            gam.name(),
+            gam.entry_point
+        );
 
         // Initialize memory
         self.cpu.memory_mut().init();
@@ -74,12 +78,13 @@ impl Emulator {
         let flash_offset = 0xD000;
         let game_data = &gam.data;
         let end = (flash_offset + game_data.len()).min(self.cpu.memory().flash.len());
-        self.cpu.memory_mut().flash[flash_offset..end].copy_from_slice(&game_data[..end - flash_offset]);
+        self.cpu.memory_mut().flash[flash_offset..end]
+            .copy_from_slice(&game_data[..end - flash_offset]);
 
         // Setup flash headers
         let sys_hdr = [
-            0xC0u8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x2F,
+            0xC0u8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+            0x00, 0x2F,
         ];
         let mut gam_hdr = [0u8; 16];
         gam_hdr[0] = 0xD0;
@@ -141,7 +146,11 @@ impl Emulator {
 
         // Debug: check what's at the entry point
         let entry_opcode = self.cpu.memory().read(gam.entry_point);
-        log::info!("Entry point 0x{:04X} opcode: 0x{:02X}", gam.entry_point, entry_opcode);
+        log::info!(
+            "Entry point 0x{:04X} opcode: 0x{:02X}",
+            gam.entry_point,
+            entry_opcode
+        );
 
         // Debug: check bank mapping
         let bank5 = self.cpu.memory().bank_switch.banks[5];
@@ -150,19 +159,30 @@ impl Emulator {
         // Debug: check flash content at expected location
         let flash_offset = 0xD000 + (gam.entry_point & 0x0FFF) as usize;
         if flash_offset < self.cpu.memory().flash.len() {
-            log::info!("Flash[0x{:04X}] = 0x{:02X}", flash_offset, self.cpu.memory().flash[flash_offset]);
+            log::info!(
+                "Flash[0x{:04X}] = 0x{:02X}",
+                flash_offset,
+                self.cpu.memory().flash[flash_offset]
+            );
         }
 
         // Debug: check physical address translation
         let paddr = self.cpu.memory().bank_switch.translate(gam.entry_point);
-        log::info!("Physical address for 0x{:04X}: 0x{:08X}", gam.entry_point, paddr);
+        log::info!(
+            "Physical address for 0x{:04X}: 0x{:08X}",
+            gam.entry_point,
+            paddr
+        );
 
         // Debug: check read_physical
         let read_result = self.cpu.memory().read_physical(paddr);
         log::info!("read_physical(0x{:08X}) = 0x{:02X}", paddr, read_result);
 
         self.running = true;
-        log::info!("Game loaded, starting execution at 0x{:04X}", gam.entry_point);
+        log::info!(
+            "Game loaded, starting execution at 0x{:04X}",
+            gam.entry_point
+        );
 
         Ok(())
     }
@@ -412,7 +432,8 @@ impl Emulator {
             0xD2F6 => {
                 let ch = self.cpu.a();
                 let _mode = self.cpu.x();
-                let pos_addr = self.cpu.memory().ram[0x26] as u16 | (self.cpu.memory().ram[0x27] as u16) << 8;
+                let pos_addr =
+                    self.cpu.memory().ram[0x26] as u16 | (self.cpu.memory().ram[0x27] as u16) << 8;
 
                 // Read the position from the pointer
                 let fb_addr = self.cpu.memory().read16(pos_addr) as usize;
@@ -468,8 +489,10 @@ impl Emulator {
             // 0xD340: Draw string or block
             // Parameters: [0x20:0x21]=source address, [0x26:0x27]=dest address
             0xD340 => {
-                let src = self.cpu.memory().ram[0x20] as u16 | (self.cpu.memory().ram[0x21] as u16) << 8;
-                let dst = self.cpu.memory().ram[0x26] as u16 | (self.cpu.memory().ram[0x27] as u16) << 8;
+                let src =
+                    self.cpu.memory().ram[0x20] as u16 | (self.cpu.memory().ram[0x21] as u16) << 8;
+                let dst =
+                    self.cpu.memory().ram[0x26] as u16 | (self.cpu.memory().ram[0x27] as u16) << 8;
 
                 // Copy data from src to dst
                 // This is used for copying screen regions or drawing blocks
@@ -610,7 +633,11 @@ impl Emulator {
         // Check for BRK instruction (game exit)
         let opcode = self.cpu.memory().read(pc);
         if opcode == 0x00 {
-            log::info!("BRK at 0x{:04X} SP=0x{:02X}, game exiting", pc, self.cpu.sp());
+            log::info!(
+                "BRK at 0x{:04X} SP=0x{:02X}, game exiting",
+                pc,
+                self.cpu.sp()
+            );
             self.running = false;
             return 1;
         }
@@ -751,59 +778,33 @@ impl Emulator {
     pub fn render_lcd_buffer(&mut self) -> [bool; 159 * 96] {
         let mut pixels = [false; 159 * 96];
 
-        // Copy first byte
         self.cpu.memory_mut().ram[0x400] = self.cpu.memory().ram[0x1000];
-
-        // Read framebuffer from RAM at 0x0400
         let ram = &self.cpu.memory().ram;
-
-        // LCD framebuffer layout
         let mut v = 0x400;
 
-        for j in (0..96).rev() {
+        for j in (-30i32..=65).rev() {
+            let y = if j >= 0 { j } else { -j + 65 } as usize;
             for i in 1..20 {
-                let byte = ram[v];
-                for bit in 0..8 {
-                    let x = i * 8 + bit;
-                    let y = j;
-                    if x < 159 && y < 96 {
-                        pixels[y * 159 + x] = (byte & (1 << (7 - bit))) != 0;
-                    }
-                }
+                decode_lcd_byte(&mut pixels, y, i * 8, ram[v]);
                 v += 1;
             }
-            v += 13; // Skip padding
+            v += 13;
         }
+
+        v = 0x413;
+        for j in (-30i32..=64).rev() {
+            let y = if j >= 0 { j } else { -j + 65 } as usize;
+            decode_lcd_byte(&mut pixels, y, 0, ram[v]);
+            v += 32;
+        }
+        decode_lcd_byte(&mut pixels, 65, 0, ram[0x0ff3]);
 
         pixels
     }
 
     /// Render LCD to RGB565 buffer
     pub fn render_lcd(&mut self, buf: &mut [u16], _ghosting: bool) {
-        // Copy first byte
-        self.cpu.memory_mut().ram[0x400] = self.cpu.memory().ram[0x1000];
-
-        // Read framebuffer from RAM at 0x0400
-        let ram = &self.cpu.memory().ram;
-        let mut pixels = [false; 159 * 96];
-
-        // LCD framebuffer layout
-        let mut v = 0x400;
-
-        for j in (0..96).rev() {
-            for i in 1..20 {
-                let byte = ram[v];
-                for bit in 0..8 {
-                    let x = i * 8 + bit;
-                    let y = j;
-                    if x < 159 && y < 96 {
-                        pixels[y * 159 + x] = (byte & (1 << (7 - bit))) != 0;
-                    }
-                }
-                v += 1;
-            }
-            v += 13; // Skip padding
-        }
+        let pixels = self.render_lcd_buffer();
 
         // Render with theme
         use crate::lcd::LcdTheme;
@@ -869,5 +870,34 @@ impl Emulator {
     /// Get debugger
     pub fn debugger(&mut self) -> &mut Debugger {
         &mut self.debug
+    }
+}
+
+fn decode_lcd_byte(pixels: &mut [bool; 159 * 96], y: usize, x: usize, byte: u8) {
+    for bit in 0..8 {
+        if x + bit < 159 {
+            pixels[y * 159 + x + bit] = byte & (1 << (7 - bit)) != 0;
+        }
+    }
+}
+
+#[cfg(test)]
+mod lcd_render_tests {
+    use super::*;
+
+    #[test]
+    fn decodes_most_significant_bit_on_left() {
+        let mut pixels = [false; 159 * 96];
+        decode_lcd_byte(&mut pixels, 2, 8, 0b1000_0001);
+        assert!(pixels[2 * 159 + 8]);
+        assert!(pixels[2 * 159 + 15]);
+        assert!(!pixels[2 * 159 + 9]);
+    }
+
+    #[test]
+    fn clips_the_unused_160th_column() {
+        let mut pixels = [false; 159 * 96];
+        decode_lcd_byte(&mut pixels, 0, 152, 0xff);
+        assert_eq!(pixels[..159].iter().filter(|pixel| **pixel).count(), 7);
     }
 }
