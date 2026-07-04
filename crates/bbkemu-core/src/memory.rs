@@ -203,7 +203,11 @@ impl Memory {
             // Page 0 - hardware registers
             0x0000..=0x00FF => self.read_page0(addr),
             // Pages 1-15: direct RAM (0x0100-0x0FFF)
-            0x0100..=0x0FFF => self.ram[addr as usize],
+            0x0100..=0x02FF | 0x0400..=0x0FFF => self.ram[addr as usize],
+            0x0300..=0x03FF => self
+                .rom_e
+                .as_ref()
+                .map_or(self.ram[addr as usize], |rom| rom[0x1FFF00 + addr as usize - 0x0300]),
             // Pages 16-255: bank-switched (0x1000-0xFFFF)
             _ => {
                 let paddr = self.bank_switch.translate(addr);
@@ -216,9 +220,11 @@ impl Memory {
     pub fn write(&mut self, addr: u16, val: u8) {
         match addr {
             0x0000..=0x00FF => self.write_page0(addr, val),
-            0x0100..=0x0FFF => {
+            0x0100..=0x02FF | 0x0400..=0x0FFF => {
                 self.write_ram(addr, val);
             }
+            0x0300..=0x03FF if self.rom_e.is_some() => {}
+            0x0300..=0x03FF => self.write_ram(addr, val),
             _ => {
                 let paddr = self.bank_switch.translate(addr);
                 self.write_physical(paddr, val);
@@ -526,8 +532,8 @@ impl Memory {
         }
     }
 
-    /// Update timers (call once per frame)
-    pub fn update_timers(&mut self) {
+    /// Advance hardware timers by 400-cycle ticks.
+    pub fn update_timers(&mut self, ticks: u32) {
         // Update main timer counter
         self.ram[registers::MTCT as usize] =
             self.ram[registers::MTCT as usize].wrapping_add(1);
@@ -538,7 +544,7 @@ impl Memory {
 
         for i in 0..4 {
             if (stcon & (1 << i)) != 0 {
-                self.timer_counters[i] += 1;
+                self.timer_counters[i] += ticks;
                 if self.timer_counters[i] >= 0x100 {
                     self.timer_counters[i] = self.ram[registers::ST1LD as usize + i] as u32;
                     if (tier & (1 << i)) != 0 {
@@ -609,5 +615,17 @@ mod tests {
         assert_eq!(Bus::get_byte(&mut memory, registers::DATA1), 0x56);
         assert_eq!(Bus::get_byte(&mut memory, registers::DATA1), 0x56);
         assert_eq!(memory.ram[registers::ADDR1L as usize], 0x00);
+    }
+
+    #[test]
+    fn page_three_uses_os_rom_vector_page_when_loaded() {
+        let mut memory = Memory::new();
+        let mut rom = vec![0; ROME_SIZE];
+        rom[0x1FFF42] = 0xA5;
+        memory.load_rom_e(&rom);
+
+        assert_eq!(memory.read(0x0342), 0xA5);
+        memory.write(0x0342, 0x5A);
+        assert_eq!(memory.read(0x0342), 0xA5);
     }
 }

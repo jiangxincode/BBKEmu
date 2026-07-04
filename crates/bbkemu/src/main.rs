@@ -108,6 +108,19 @@ fn main() -> Result<()> {
     if let Some(path) = &cli.rome {
         let data = fs::read(path)?;
         emu.load_rom_e(&data);
+    } else {
+        let default_paths = [
+            "tmp/gam4980/retroarch/system/gam4980/E.BIN",
+            "system/gam4980/E.BIN",
+            "E.BIN",
+        ];
+        for path in &default_paths {
+            if let Ok(data) = fs::read(path) {
+                log::info!("Loading OS ROM from {}", path);
+                emu.load_rom_e(&data);
+                break;
+            }
+        }
     }
 
     // Load game
@@ -136,7 +149,12 @@ fn run_headless(emu: &mut Emulator, frames: u64, output: &PathBuf, scale: u32) -
     }
     let lcd_buffer = emu.render_lcd_buffer();
     save_bmp(output, &lcd_buffer, scale)?;
-    log::info!("Emulation complete after {} frames", emu.frame_count());
+    log::info!(
+        "Emulation complete after {} frames at PC=0x{:04X} ({} cycles)",
+        emu.frame_count(),
+        emu.cpu.pc(),
+        emu.cpu.cycles()
+    );
     log::info!("Output saved to {}", output.display());
     Ok(())
 }

@@ -34,6 +34,8 @@ pub struct Emulator {
     running: bool,
     /// Frame counter
     frame_count: u64,
+    /// CPU cycles accumulated toward the next 400-cycle timer tick.
+    timer_cycle_remainder: u32,
 }
 
 impl Emulator {
@@ -54,6 +56,7 @@ impl Emulator {
             model,
             running: false,
             frame_count: 0,
+            timer_cycle_remainder: 0,
         }
     }
 
@@ -73,6 +76,11 @@ impl Emulator {
 
         // Initialize memory
         self.cpu.memory_mut().init();
+        let lle_mode = self.cpu.memory().rom_e.is_some();
+        if lle_mode {
+            self.cpu.reset();
+            self.run_os_init();
+        }
 
         // Load game into flash at 0x20D000
         let flash_offset = 0xD000;
@@ -119,9 +127,11 @@ impl Emulator {
             0x0E88 => 0x0E88u32, // 4988
             _ => 0x0EA8u32,      // default to 4980
         };
-        self.cpu.memory_mut().bank_switch.set(0xD, os_bank);
-        self.cpu.memory_mut().bank_switch.set(0xE, os_bank + 1);
-        self.cpu.memory_mut().bank_switch.set(0xF, os_bank + 2);
+        if !lle_mode {
+            self.cpu.memory_mut().bank_switch.set(0xD, os_bank);
+            self.cpu.memory_mut().bank_switch.set(0xE, os_bank + 1);
+            self.cpu.memory_mut().bank_switch.set(0xF, os_bank + 2);
+        }
 
         // Setup save area
         let save_base = 0x7000; // 4980
@@ -138,10 +148,14 @@ impl Emulator {
         self.cpu.memory_mut().write(0x2029, 0x0D);
         self.cpu.memory_mut().write(0x202A, 0x02);
 
-        // Reset CPU to initialize registers
-        self.cpu.reset();
-
-        // Set PC to game entry point
+        if lle_mode {
+            let sp = self.cpu.sp();
+            self.cpu.memory_mut().ram[0x100 | sp as usize] = 0x02;
+            self.cpu.memory_mut().ram[0x100 | sp.wrapping_sub(1) as usize] = 0x60;
+            self.cpu.set_sp(sp.wrapping_sub(2));
+        } else {
+            self.cpu.reset();
+        }
         self.cpu.set_pc(gam.entry_point);
 
         // Debug: check what's at the entry point
@@ -611,11 +625,16 @@ impl Emulator {
         let mut cycles_run = 0u32;
 
         while cycles_run < cycles_per_frame && self.running {
-            cycles_run += self.step();
+            let halted = self.cpu.memory().ram[0x200] & 0x08 != 0;
+            let cycles = if halted { 400 } else { self.step() };
+            cycles_run += cycles;
+            self.timer_cycle_remainder += cycles;
+            let ticks = self.timer_cycle_remainder / 400;
+            if ticks > 0 {
+                self.cpu.memory_mut().update_timers(ticks);
+                self.timer_cycle_remainder %= 400;
+            }
         }
-
-        // Update timers
-        self.cpu.memory_mut().update_timers();
 
         self.frame_count += 1;
     }
@@ -649,7 +668,8 @@ impl Emulator {
             // Check if target is in OS/system area (0xD000-0xFFFF)
             // or if it's a known syscall address
             // Intercept calls to OS area (0xD000+) or registered syscalls
-            if target >= 0xD000 || self.syscalls.is_syscall(target) {
+            let hle_mode = self.cpu.memory().rom_e.is_none();
+            if hle_mode && (target >= 0xD000 || self.syscalls.is_syscall(target)) {
                 let result = self.handle_syscall(target);
 
                 if result.handled {
@@ -691,30 +711,31 @@ impl Emulator {
 
         // Check for keyboard interrupt (PI)
         if (isr & 0x80) != 0 && (ier & 0x80) != 0 {
-            self.trigger_interrupt(0x02);
             self.cpu.memory_mut().ram[0x04] &= 0x7F; // Clear PI flag
             return;
         }
 
         // Check for timer interrupts
         if (tisr & 0x01) != 0 && (tier & 0x01) != 0 {
-            self.trigger_interrupt(0x03); // ST1
-            self.cpu.memory_mut().ram[0x05] &= 0xFE;
+            let ram = &mut self.cpu.memory_mut().ram;
+            ram[0x05] &= 0xFE;
+            ram[0x2018] = ram[0x2018].wrapping_add(1);
+            if ram[0x2018] >= ram[0x2019] {
+                ram[0x201E] |= 0x01;
+                ram[0x2018] = 0;
+            }
             return;
         }
         if (tisr & 0x02) != 0 && (tier & 0x02) != 0 {
             self.trigger_interrupt(0x04); // ST2
-            self.cpu.memory_mut().ram[0x05] &= 0xFD;
             return;
         }
         if (tisr & 0x04) != 0 && (tier & 0x04) != 0 {
             self.trigger_interrupt(0x05); // ST3
-            self.cpu.memory_mut().ram[0x05] &= 0xFB;
             return;
         }
         if (tisr & 0x08) != 0 && (tier & 0x08) != 0 {
             self.trigger_interrupt(0x06); // ST4
-            self.cpu.memory_mut().ram[0x05] &= 0xF7;
             return;
         }
 
@@ -744,20 +765,23 @@ impl Emulator {
         self.cpu.memory_mut().ram[0x100 | sp.wrapping_sub(2) as usize] = status;
         self.cpu.set_sp(sp.wrapping_sub(3));
 
-        // Read vector address (at 0x0300 + idx * 4)
-        let vector_addr = 0x0300 + (vector_idx as u16) * 4;
-        let lo = self.cpu.memory().ram[vector_addr as usize] as u16;
-        let hi = self.cpu.memory().ram[(vector_addr + 1) as usize] as u16;
-        let target = (hi << 8) | lo;
-
-        self.cpu.set_pc(target);
+        // Each vector slot contains an executable ROM jump stub.
+        self.cpu.set_pc(0x0300 + (vector_idx as u16) * 4);
     }
 
     /// Handle key down event
     pub fn key_down(&mut self, key: BbkKey) {
         let code = key as u8;
-        self.cpu.memory_mut().ram[0x24E] = code | 0x80; // KEYCODE register
-        self.cpu.memory_mut().ram[0x04] |= 0x80; // Set PI flag in ISR
+        let ram = &mut self.cpu.memory_mut().ram;
+        ram[0x200] &= 0xF7;
+        ram[0x24E] = code | 0x80;
+        ram[0x04] |= 0x80;
+        if ram[0x23A] & 0x80 != 0 {
+            ram[0x2003] = 0;
+            ram[0x2004] = 0x0F;
+            ram[0x2017] = code & 0x3F;
+            ram[0x24E] = 0;
+        }
         self.input.key_down(key, self.frame_count * 16);
     }
 
