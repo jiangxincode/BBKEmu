@@ -747,6 +747,37 @@ impl Emulator {
         &FB
     }
 
+    /// Render LCD to boolean buffer (true = foreground, false = background)
+    pub fn render_lcd_buffer(&mut self) -> [bool; 159 * 96] {
+        let mut pixels = [false; 159 * 96];
+
+        // Copy first byte
+        self.cpu.memory_mut().ram[0x400] = self.cpu.memory().ram[0x1000];
+
+        // Read framebuffer from RAM at 0x0400
+        let ram = &self.cpu.memory().ram;
+
+        // LCD framebuffer layout
+        let mut v = 0x400;
+
+        for j in (0..96).rev() {
+            for i in 1..20 {
+                let byte = ram[v];
+                for bit in 0..8 {
+                    let x = i * 8 + bit;
+                    let y = j;
+                    if x < 159 && y < 96 {
+                        pixels[y * 159 + x] = (byte & (1 << (7 - bit))) != 0;
+                    }
+                }
+                v += 1;
+            }
+            v += 13; // Skip padding
+        }
+
+        pixels
+    }
+
     /// Render LCD to RGB565 buffer
     pub fn render_lcd(&mut self, buf: &mut [u16], _ghosting: bool) {
         // Copy first byte

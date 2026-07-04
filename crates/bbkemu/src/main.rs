@@ -38,6 +38,14 @@ struct Cli {
     /// Enable debug logging
     #[arg(short, long)]
     debug: bool,
+
+    /// Output BMP file path
+    #[arg(short, long, default_value = "output.bmp")]
+    output: PathBuf,
+
+    /// Number of frames to run
+    #[arg(long, default_value = "60")]
+    frames: u64,
 }
 
 fn main() -> Result<()> {
@@ -68,11 +76,9 @@ fn main() -> Result<()> {
     log::info!("Emulator created");
 
     // Load optional ROMs
-    let mut has_rom = false;
     if let Some(path) = &cli.rom8 {
         let data = fs::read(path)?;
         emu.load_rom_8(&data);
-        has_rom = true;
     } else {
         // Try to load font ROM from default location
         let default_paths = [
@@ -84,7 +90,6 @@ fn main() -> Result<()> {
             if let Ok(data) = fs::read(path) {
                 log::info!("Loading font ROM from {}", path);
                 emu.load_rom_8(&data);
-                has_rom = true;
                 break;
             }
         }
@@ -92,14 +97,7 @@ fn main() -> Result<()> {
     if let Some(path) = &cli.rome {
         let data = fs::read(path)?;
         emu.load_rom_e(&data);
-        has_rom = true;
     }
-
-    // Run OS initialization if ROM is loaded
-    // Skip for now - bank table is set up manually in load_gam
-    // if has_rom {
-    //     emu.run_os_init();
-    // }
 
     // Load game
     let game_data = fs::read(&cli.game)?;
@@ -110,24 +108,16 @@ fn main() -> Result<()> {
     log::info!("Scale: {}x", cli.scale);
 
     // Run emulation
-    // In a real implementation, this would be a window event loop
-    // For now, just run a fixed number of frames
-    let target_fps = 60;
+    let target_fps = 60u64;
     let frame_duration = std::time::Duration::from_micros(1_000_000 / target_fps);
 
-    log::info!("Running emulation at {} FPS...", target_fps);
+    log::info!("Running {} frames at {} FPS...", cli.frames, target_fps);
 
-    for frame in 0..600 {
+    for frame in 0..cli.frames {
         let start = std::time::Instant::now();
 
         // Run one frame
         emu.run_frame();
-
-        // Handle input (placeholder)
-        // In real implementation, this would read from window events
-
-        // Render (placeholder)
-        // In real implementation, this would render to window
 
         // Frame timing
         let elapsed = start.elapsed();
@@ -143,5 +133,62 @@ fn main() -> Result<()> {
 
     log::info!("Emulation complete. Frames: {}", emu.frame_count());
 
+    // Render final frame to BMP
+    let lcd_buffer = emu.render_lcd_buffer();
+    save_bmp(&cli.output, &lcd_buffer, cli.scale)?;
+
+    log::info!("Output saved to {}", cli.output.display());
+
+    Ok(())
+}
+
+fn save_bmp(path: &PathBuf, pixels: &[bool; 159 * 96], scale: u32) -> Result<()> {
+    let width = 159 * scale;
+    let height = 96 * scale;
+
+    // BMP file format
+    let file_size = 54 + (width * height * 3) as u32;
+    let mut bmp = Vec::with_capacity(file_size as usize);
+
+    // BMP header
+    bmp.extend_from_slice(b"BM");
+    bmp.extend_from_slice(&file_size.to_le_bytes());
+    bmp.extend_from_slice(&[0, 0, 0, 0]); // Reserved
+    bmp.extend_from_slice(&54u32.to_le_bytes()); // Offset to pixel data
+
+    // DIB header
+    bmp.extend_from_slice(&40u32.to_le_bytes()); // Header size
+    bmp.extend_from_slice(&(width as i32).to_le_bytes());
+    bmp.extend_from_slice(&(height as i32).to_le_bytes());
+    bmp.extend_from_slice(&1u16.to_le_bytes()); // Planes
+    bmp.extend_from_slice(&24u16.to_le_bytes()); // Bits per pixel
+    bmp.extend_from_slice(&0u32.to_le_bytes()); // Compression
+    bmp.extend_from_slice(&0u32.to_le_bytes()); // Image size
+    bmp.extend_from_slice(&0i32.to_le_bytes()); // X pixels per meter
+    bmp.extend_from_slice(&0i32.to_le_bytes()); // Y pixels per meter
+    bmp.extend_from_slice(&0u32.to_le_bytes()); // Colors used
+    bmp.extend_from_slice(&0u32.to_le_bytes()); // Important colors
+
+    // Pixel data (BGR format, bottom-up)
+    let bg_color = [0xDA, 0xD6, 0x00]; // Grey background (BGR)
+    let fg_color = [0x00, 0x00, 0x00]; // Black foreground (BGR)
+
+    for y in (0..96).rev() {
+        for _dy in 0..scale {
+            for x in 0..159 {
+                let pixel = pixels[y * 159 + x];
+                let color = if pixel { &fg_color } else { &bg_color };
+                for _dx in 0..scale {
+                    bmp.extend_from_slice(color);
+                }
+            }
+            // Pad to 4-byte boundary
+            let row_size = (width * 3) as usize;
+            let padding = (4 - (row_size % 4)) % 4;
+            bmp.extend_from_slice(&vec![0u8; padding]);
+        }
+    }
+
+    fs::write(path, bmp)?;
     Ok(())
 }
