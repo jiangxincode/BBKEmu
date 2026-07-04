@@ -1,0 +1,8 @@
+display_name = "BBKEmu"
+authors = "jiangxincode"
+supported_extensions = "gam"
+corename = "BBKEmu"
+license = "BSD-3-Clause"
+permissions = ""
+display_version = "0.1.0"
+categories = "Emulator"

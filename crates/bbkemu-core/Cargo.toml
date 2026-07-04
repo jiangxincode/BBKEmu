@@ -1,0 +1,13 @@
+[package]
+name = "bbkemu-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "BBK electronic dictionary game emulator core"
+
+[dependencies]
+serde = { workspace = true }
+bincode = { workspace = true }
+log = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }

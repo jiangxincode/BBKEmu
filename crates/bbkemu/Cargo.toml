@@ -1,0 +1,20 @@
+[package]
+name = "bbkemu"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "BBK electronic dictionary game emulator - standalone frontend"
+
+[[bin]]
+name = "bbkemu"
+path = "src/main.rs"
+
+[dependencies]
+bbkemu-core = { path = "../bbkemu-core" }
+clap = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+anyhow = { workspace = true }
+winit = { workspace = true }
+softbuffer = { workspace = true }
+cpal = { workspace = true }
