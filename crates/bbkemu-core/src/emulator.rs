@@ -36,7 +36,16 @@ pub struct Emulator {
     frame_count: u64,
     /// CPU cycles accumulated toward the next 400-cycle timer tick.
     timer_cycle_remainder: u32,
+    /// Return points for compiler-runtime far calls handled by HLE.
+    hle_far_calls: Vec<HleFarCall>,
 }
+
+struct HleFarCall {
+    return_pc: u16,
+    banks: [u32; 4],
+}
+
+const HLE_FAR_RETURN: u16 = 0x02F0;
 
 impl Emulator {
     /// Create a new emulator instance
@@ -57,6 +66,7 @@ impl Emulator {
             running: false,
             frame_count: 0,
             timer_cycle_remainder: 0,
+            hle_far_calls: Vec::new(),
         }
     }
 
@@ -646,6 +656,16 @@ impl Emulator {
     fn step(&mut self) -> u32 {
         let pc = self.cpu.pc();
 
+        if pc == HLE_FAR_RETURN {
+            if let Some(call) = self.hle_far_calls.pop() {
+                for (index, bank) in call.banks.into_iter().enumerate() {
+                    self.cpu.memory_mut().bank_switch.set(5 + index as u8, bank);
+                }
+                self.cpu.set_pc(call.return_pc);
+                return 1;
+            }
+        }
+
         // Check for breakpoint
         if self.debug.has_breakpoint(pc) {
             log::info!("Breakpoint hit at 0x{:04X}", pc);
@@ -683,6 +703,11 @@ impl Emulator {
             // or if it's a known syscall address
             // Intercept calls to OS area (0xD000+) or registered syscalls
             let hle_mode = self.cpu.memory().rom_e.is_none();
+            if hle_mode && target == 0xD2F6 {
+                if self.begin_hle_far_call(pc) {
+                    return 6;
+                }
+            }
             if hle_mode && (target >= 0xD000 || self.syscalls.is_syscall(target)) {
                 let result = self.handle_syscall(target);
 
@@ -708,6 +733,67 @@ impl Emulator {
         self.handle_interrupts();
 
         cycles
+    }
+
+    fn begin_hle_far_call(&mut self, caller: u16) -> bool {
+        let descriptor = self.cpu.memory().read16(0x26);
+        let Some((target, segment)) = self.hle_descriptor(descriptor) else {
+            log::warn!("Unknown HLE far-call descriptor 0x{descriptor:04X}");
+            return false;
+        };
+
+        // Segments below E0 address OS ROM groups and require semantic handlers.
+        if segment < 0xE0 {
+            log::debug!(
+                "Skipping ROM-only HLE far call descriptor=0x{descriptor:04X} target=0x{target:04X} segment={segment:02X}"
+            );
+            return false;
+        }
+
+        let banks = std::array::from_fn(|index| self.cpu.memory().bank_switch.banks[5 + index]);
+        let data_base = u32::from(self.cpu.memory().read(0x2029))
+            | (u32::from(self.cpu.memory().read(0x202A)) << 8);
+        let base = data_base + u32::from(segment - 0xE0) * 4;
+        for index in 0..4 {
+            self.cpu
+                .memory_mut()
+                .bank_switch
+                .set(5 + index, base + u32::from(index));
+        }
+
+        let sp = self.cpu.sp();
+        let trampoline = HLE_FAR_RETURN.wrapping_sub(1);
+        self.cpu.memory_mut().ram[0x100 | sp as usize] = (trampoline >> 8) as u8;
+        self.cpu.memory_mut().ram[0x100 | sp.wrapping_sub(1) as usize] = trampoline as u8;
+        self.cpu.set_sp(sp.wrapping_sub(2));
+        self.hle_far_calls.push(HleFarCall {
+            return_pc: caller.wrapping_add(3),
+            banks,
+        });
+        self.cpu.set_pc(target);
+        true
+    }
+
+    fn hle_descriptor(&self, address: u16) -> Option<(u16, u8)> {
+        const MODEL_4988: &[(u16, u16, u8)] = &[
+            (0xE7B2, 0x7770, 0x07),
+            (0xE8EC, 0x624D, 0x06),
+            (0xE932, 0x5000, 0x08),
+            (0xE935, 0x5093, 0x08),
+            (0xE938, 0x5D45, 0x08),
+            (0xE93B, 0x5FF3, 0x08),
+            (0xE93E, 0x6111, 0x08),
+            (0xE944, 0x7D92, 0x08),
+            (0xE95C, 0x7093, 0x08),
+            (0xE965, 0x6A79, 0x08),
+        ];
+        if let Some((_, target, segment)) = MODEL_4988.iter().find(|entry| entry.0 == address) {
+            return Some((*target, *segment));
+        }
+
+        let target = self.cpu.memory().read16(address);
+        let segment = self.cpu.memory().read(address.wrapping_add(2));
+        (target != 0).then_some((target, segment))
     }
 
     /// Handle pending interrupts

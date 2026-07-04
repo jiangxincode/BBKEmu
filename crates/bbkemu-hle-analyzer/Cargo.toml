@@ -1,0 +1,15 @@
+[package]
+name = "bbkemu-hle-analyzer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Reverse-engineering utilities for BBK HLE development"
+
+[[bin]]
+name = "bbkemu-hle-analyzer"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+capstone = { workspace = true }
+clap = { workspace = true }
