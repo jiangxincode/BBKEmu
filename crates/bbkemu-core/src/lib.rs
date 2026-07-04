@@ -15,6 +15,7 @@ pub mod audio;
 pub mod save;
 pub mod debug;
 pub mod model;
+pub mod font_data;
 
 pub use emulator::Emulator;
 pub use model::BbkModel;

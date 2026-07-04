@@ -417,27 +417,27 @@ impl Emulator {
                 // Read the position from the pointer
                 let fb_addr = self.cpu.memory().read16(pos_addr) as usize;
 
-                // Copy font data to avoid borrow issues
-                let font_data: Option<[u8; 8]> = if let Some(ref rom) = self.cpu.memory().rom_8 {
+                // Get font bitmap - use built-in font or font ROM
+                let font_bitmap: [u8; 8] = if let Some(ref rom) = self.cpu.memory().rom_8 {
+                    // Use font ROM if available
                     let font_offset = (ch as usize) * 8;
                     if font_offset + 8 <= rom.len() {
                         let mut data = [0u8; 8];
                         data.copy_from_slice(&rom[font_offset..font_offset + 8]);
-                        Some(data)
+                        data
                     } else {
-                        None
+                        crate::font_data::get_font_bitmap(ch)
                     }
                 } else {
-                    None
+                    // Use built-in font
+                    crate::font_data::get_font_bitmap(ch)
                 };
 
                 // Write font data to LCD framebuffer
-                if let Some(font) = font_data {
-                    for row in 0..8 {
-                        let fb_offset = fb_addr + row * 20; // 20 bytes per row
-                        if fb_offset < 0x1000 - 0x0400 {
-                            self.cpu.memory_mut().ram[0x0400 + fb_offset] = font[row];
-                        }
+                for row in 0..8 {
+                    let fb_offset = fb_addr + row * 20; // 20 bytes per row
+                    if fb_offset < 0x1000 - 0x0400 {
+                        self.cpu.memory_mut().ram[0x0400 + fb_offset] = font_bitmap[row];
                     }
                 }
 
