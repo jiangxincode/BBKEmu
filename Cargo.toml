@@ -19,7 +19,7 @@ mos6502 = "0.10"
 
 # Serialization (save states)
 serde = { version = "1", features = ["derive"] }
-bincode = "1"
+bincode = "3"
 
 # Logging
 log = "0.4"
