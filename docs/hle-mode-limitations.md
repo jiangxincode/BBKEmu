@@ -47,6 +47,7 @@ AA         ; TAX - 保存返回值
 ```
 
 D2F6调用了4个子函数：
+
 - **E8F8**: 设置bank switching
 - **E8FB**: 切换到目标segment
 - **D572**: 函数指针调用

@@ -97,8 +97,7 @@ fn main() -> Result<()> {
     } else {
         // Try to load font ROM from default location
         let default_paths = [
-            "tmp/gam4980/retroarch/system/gam4980/8.BIN",
-            "system/gam4980/8.BIN",
+            "system/BBKEmu/8.BIN",
             "8.BIN",
         ];
         for path in &default_paths {
@@ -115,8 +114,7 @@ fn main() -> Result<()> {
         emu.load_rom_e(&data);
     } else {
         let default_paths = [
-            "tmp/gam4980/retroarch/system/gam4980/E.BIN",
-            "system/gam4980/E.BIN",
+            "system/BBKEmu/E.BIN",
             "E.BIN",
         ];
         for path in &default_paths {
