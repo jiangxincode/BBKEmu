@@ -32,6 +32,6 @@ thiserror = "2"
 # Standalone frontend
 winit = "0.30"
 softbuffer = "0.4"
-cpal = "0.15"
+cpal = "0.18"
 clap = { version = "4", features = ["derive"] }
 capstone = "0.14"
