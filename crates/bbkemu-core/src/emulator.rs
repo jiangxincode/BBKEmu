@@ -468,6 +468,16 @@ impl Emulator {
         self.timer_rate
     }
 
+    /// Set minimum key repeat interval in milliseconds
+    pub fn set_key_repeat_interval(&mut self, ms: u64) {
+        self.input.set_min_repeat_interval(ms);
+    }
+
+    /// Get minimum key repeat interval in milliseconds
+    pub fn key_repeat_interval(&self) -> u64 {
+        self.input.min_repeat_interval()
+    }
+
     /// Render LCD to boolean buffer (true = foreground, false = background)
     pub fn render_lcd_buffer(&mut self) -> [bool; 159 * 96] {
         let mut pixels = [false; 159 * 96];

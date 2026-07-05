@@ -70,6 +70,10 @@ struct Cli {
     /// Timer clock rate multiplier (0.25 - 8.0)
     #[arg(long, default_value = "1.0")]
     timer_rate: f32,
+
+    /// Minimum key repeat interval in milliseconds (0 = no limit)
+    #[arg(long, default_value = "0")]
+    key_repeat_interval: u64,
 }
 
 fn main() -> Result<()> {
@@ -107,10 +111,12 @@ fn main() -> Result<()> {
     }
     emu.set_cpu_rate(cli.cpu_rate);
     emu.set_timer_rate(cli.timer_rate);
+    emu.set_key_repeat_interval(cli.key_repeat_interval);
     log::info!(
-        "CPU rate: {}x, Timer rate: {}x",
+        "CPU rate: {}x, Timer rate: {}x, Key repeat interval: {}ms",
         emu.cpu_rate(),
-        emu.timer_rate()
+        emu.timer_rate(),
+        emu.key_repeat_interval()
     );
     log::info!("Emulator created");
 

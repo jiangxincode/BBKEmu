@@ -65,6 +65,7 @@ bbkemu game.gam
 | `--swap-lcd` | Swap LCD width/height for landscape display | false |
 | `--cpu-rate <RATE>` | CPU clock rate multiplier (0.25-8.0) | 1.0 |
 | `--timer-rate <RATE>` | Timer clock rate multiplier (0.25-8.0) | 1.0 |
+| `--key-repeat-interval <MS>` | Minimum key repeat interval in ms (0 = no limit) | 0 |
 
 ### RetroArch Mode
 
@@ -130,6 +131,7 @@ In RetroArch, you can configure the following options under "Quick Menu" → "Co
 | Swap LCD Width/Height | Swap display dimensions for landscape orientation | portrait, landscape |
 | CPU Clock Rate | CPU speed multiplier | 0.25, 0.50, 0.75, 1.00, 1.50, 2.00, 3.00, 4.00, 8.00 |
 | Timer Clock Rate | Timer speed multiplier | 0.25, 0.50, 0.75, 1.00, 1.50, 2.00, 3.00, 4.00, 8.00 |
+| Key Repeat Interval | Minimum interval between repeated key presses (ms) | 0, 50, 100, 150, 200, 250, 300, 400, 500 |
 
 ### ROM Analyzer Tool
 

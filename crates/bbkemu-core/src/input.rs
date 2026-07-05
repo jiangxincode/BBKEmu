@@ -247,4 +247,9 @@ impl Input {
     pub fn set_min_repeat_interval(&mut self, ms: u64) {
         self.min_repeat_interval = ms;
     }
+
+    /// Get minimum repeat interval
+    pub fn min_repeat_interval(&self) -> u64 {
+        self.min_repeat_interval
+    }
 }

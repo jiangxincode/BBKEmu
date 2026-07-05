@@ -155,6 +155,10 @@ static CORE_OPTIONS: &[&str] = &[
         "bbkemu_timer_rate\0Timer Clock Rate\0",
         "0.25;0.50;0.75;1.00;1.50;2.00;3.00;4.00;8.00\0"
     ),
+    concat!(
+        "bbkemu_key_repeat_interval\0Key Repeat Interval (ms)\0",
+        "0;50;100;150;200;250;300;400;500\0"
+    ),
 ];
 
 /// Get the system directory from RetroArch
@@ -242,6 +246,13 @@ fn apply_core_options(emu: &mut Emulator) {
         if let Some(value) = get_variable_value(Some(cb), "bbkemu_timer_rate") {
             if let Ok(rate) = value.parse::<f32>() {
                 emu.set_timer_rate(rate);
+            }
+        }
+
+        // Check for key_repeat_interval option
+        if let Some(value) = get_variable_value(Some(cb), "bbkemu_key_repeat_interval") {
+            if let Ok(interval) = value.parse::<u64>() {
+                emu.set_key_repeat_interval(interval);
             }
         }
     }
