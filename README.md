@@ -214,7 +214,7 @@ timers.
 
 ## Game Compatibility
 
-Game resources can be downloaded from [Baidu Netdisk](https://pan.baidu.com/s/1CuNeJe-RKXG_E-LhdI5ldg?pwd=aloy).
+Game resources can be downloaded from [Baidu Netdisk](https://pan.baidu.com/s/1xazePiM1d9Nxhxz23UL4zA?pwd=aloy).
 
 | Game | Status | Notes |
 |------|--------|-------|
