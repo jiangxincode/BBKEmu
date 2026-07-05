@@ -253,8 +253,7 @@ impl App {
                     }
                     LcdOrientation::Landscape => {
                         // Map rotated coordinates back to original
-                        let orig_x =
-                            (display_width - 1 - x * display_width / width as usize) as usize;
+                        let orig_x = display_width - 1 - x * display_width / width as usize;
                         let orig_y = y * display_height / height as usize;
                         (orig_y.min(158), orig_x.min(95))
                     }
