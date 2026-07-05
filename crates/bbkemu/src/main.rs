@@ -34,8 +34,8 @@ struct Cli {
     #[arg(short = 'e', long)]
     rome: Option<PathBuf>,
 
-    /// Force HLE mode without loading the OS ROM
-    #[arg(long, conflicts_with = "rome")]
+    /// Force HLE mode without loading the OS ROM (deprecated: OS ROM is now always loaded)
+    #[arg(long, conflicts_with = "rome", hide = true)]
     hle: bool,
 
     /// Display scale factor
@@ -113,10 +113,11 @@ fn main() -> Result<()> {
             }
         }
     }
+    // Always load OS ROM - needed for D2F6 dispatch and proper initialization
     if let Some(path) = &cli.rome {
         let data = fs::read(path)?;
         emu.load_rom_e(&data);
-    } else if !cli.hle {
+    } else {
         let default_paths = [
             "tmp/gam4980/retroarch/system/gam4980/E.BIN",
             "system/gam4980/E.BIN",

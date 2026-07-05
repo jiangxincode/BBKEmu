@@ -7,6 +7,7 @@ pub mod file;
 pub mod timer;
 pub mod string;
 pub mod misc;
+pub mod bbkos;
 
 use crate::syscall::SyscallTable;
 
@@ -35,6 +36,9 @@ pub fn build_syscall_table() -> SyscallTable {
 
     // Register misc syscalls
     misc::register(&mut table);
+
+    // Register BBK OS syscalls
+    bbkos::register(&mut table);
 
     table
 }

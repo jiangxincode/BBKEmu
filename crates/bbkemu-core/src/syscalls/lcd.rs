@@ -106,9 +106,25 @@ fn lcd_pixel(ctx: &mut SyscallContext) -> SyscallResult {
 
 fn lcd_char(ctx: &mut SyscallContext) -> SyscallResult {
     let ch = ctx.cpu.a();
-    // TODO: Use font data to draw character
-    // For now, just log the character
-    log::trace!("lcd_char: 0x{:02X} ('{}')", ch, ch as char);
+    let x = ctx.lcd.cursor_x();
+    let y = ctx.lcd.cursor_y();
+
+    // Get font bitmap for the character
+    let font_bitmap = crate::font_data::get_font_bitmap(ch);
+
+    // Write font data to LCD framebuffer at cursor position
+    for row in 0..8u8 {
+        let byte = font_bitmap[row as usize];
+        for bit in 0..8u8 {
+            if byte & (1 << (7 - bit)) != 0 {
+                ctx.lcd.set_pixel(x + bit, y + row, true);
+            }
+        }
+    }
+
+    // Advance cursor by character width (8 pixels)
+    ctx.lcd.set_cursor(x + 8, y);
+
     SyscallResult::handled()
 }
 
@@ -117,20 +133,41 @@ fn lcd_string(ctx: &mut SyscallContext) -> SyscallResult {
     let addr_hi = ctx.cpu.y() as u16;
     let addr = addr_lo | (addr_hi << 8);
 
-    // Read string from memory and draw
-    let mut offset = 0;
+    let mut x = ctx.lcd.cursor_x();
+    let y = ctx.lcd.cursor_y();
+
+    // Read string from memory and draw each character
+    let mut offset = 0u16;
     loop {
         let ch = ctx.memory.read(addr + offset);
         if ch == 0 {
             break;
         }
-        // TODO: Draw character
-        log::trace!("lcd_string: char 0x{:02X} at offset {}", ch, offset);
+
+        // Get font bitmap for the character
+        let font_bitmap = crate::font_data::get_font_bitmap(ch);
+
+        // Write font data to LCD framebuffer
+        for row in 0..8u8 {
+            let byte = font_bitmap[row as usize];
+            for bit in 0..8u8 {
+                if byte & (1 << (7 - bit)) != 0 {
+                    ctx.lcd.set_pixel(x + bit, y + row, true);
+                }
+            }
+        }
+
+        // Advance x position by character width (8 pixels)
+        x = x.wrapping_add(8);
+
         offset += 1;
         if offset > 255 {
             break; // Safety limit
         }
     }
+
+    // Update cursor position after the string
+    ctx.lcd.set_cursor(x, y);
 
     SyscallResult::handled()
 }
@@ -143,36 +180,36 @@ fn lcd_cursor(ctx: &mut SyscallContext) -> SyscallResult {
 }
 
 fn lcd_rect(ctx: &mut SyscallContext) -> SyscallResult {
+    // Parameters: X=x, Y=y, A=width, height read from zero-page 0x20
     let x = ctx.cpu.x();
     let y = ctx.cpu.y();
     let w = ctx.cpu.a();
-
-    // Read height from memory or stack
-    // TODO: Determine correct parameter passing
-    let h = 10; // Placeholder
+    let h = ctx.memory.read(0x20);
 
     ctx.lcd.fill_rect(x, y, w, h, true);
     SyscallResult::handled()
 }
 
 fn lcd_line(ctx: &mut SyscallContext) -> SyscallResult {
+    // Parameters: X=x1, Y=y1, A=x2, y2 read from zero-page 0x20
     let x1 = ctx.cpu.x();
     let y1 = ctx.cpu.y();
     let x2 = ctx.cpu.a();
-    // TODO: Read y2 from memory
-    let y2 = 0; // Placeholder
+    let y2 = ctx.memory.read(0x20);
 
     // Draw line using Bresenham's algorithm
     let dx = (x2 as i16 - x1 as i16).abs();
     let dy = (y2 as i16 - y1 as i16).abs();
-    let sx = if x1 < x2 { 1 } else { -1 };
-    let sy = if y1 < y2 { 1 } else { -1 };
+    let sx = if x1 < x2 { 1i16 } else { -1i16 };
+    let sy = if y1 < y2 { 1i16 } else { -1i16 };
     let mut err = dx - dy;
     let mut x = x1 as i16;
     let mut y = y1 as i16;
 
     loop {
-        ctx.lcd.set_pixel(x as u8, y as u8, true);
+        if x >= 0 && x < 159 && y >= 0 && y < 96 {
+            ctx.lcd.set_pixel(x as u8, y as u8, true);
+        }
         if x == x2 as i16 && y == y2 as i16 {
             break;
         }

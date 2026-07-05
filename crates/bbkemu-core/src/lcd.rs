@@ -75,6 +75,16 @@ impl Lcd {
         self.cursor_y = y;
     }
 
+    /// Get cursor X position
+    pub fn cursor_x(&self) -> u8 {
+        self.cursor_x
+    }
+
+    /// Get cursor Y position
+    pub fn cursor_y(&self) -> u8 {
+        self.cursor_y
+    }
+
     /// Draw a character at cursor position and advance cursor
     pub fn draw_char(&mut self, ch: u8, font: &FontData) {
         if let Some(glyph) = font.get_glyph(ch) {

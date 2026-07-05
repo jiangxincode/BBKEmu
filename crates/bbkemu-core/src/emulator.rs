@@ -11,7 +11,7 @@ use crate::lcd::Lcd;
 use crate::memory::Memory;
 use crate::model::{BbkModel, MODEL_4980};
 use crate::save::SaveState;
-use crate::syscall::{SyscallContext, SyscallTable};
+use crate::syscall::SyscallTable;
 use crate::syscalls;
 
 /// Main emulator struct
@@ -38,6 +38,8 @@ pub struct Emulator {
     timer_cycle_remainder: u32,
     /// Return points for compiler-runtime far calls handled by HLE.
     hle_far_calls: Vec<HleFarCall>,
+    /// Whether to use HLE syscall interception (intercept JSR to OS area)
+    hle_syscalls: bool,
 }
 
 struct HleFarCall {
@@ -67,12 +69,18 @@ impl Emulator {
             frame_count: 0,
             timer_cycle_remainder: 0,
             hle_far_calls: Vec::new(),
+            hle_syscalls: false,
         }
     }
 
     /// Create emulator with default model (A4980)
     pub fn default() -> Self {
         Self::new(&MODEL_4980)
+    }
+
+    /// Enable HLE syscall interception
+    pub fn set_hle_syscalls(&mut self, enabled: bool) {
+        self.hle_syscalls = enabled;
     }
 
     /// Load a GAM file
@@ -90,6 +98,14 @@ impl Emulator {
         if lle_mode {
             self.cpu.reset();
             self.run_os_init();
+        } else {
+            // No OS ROM available - minimal init
+            self.cpu.memory_mut().ram[0x200] = 0x00;
+            self.cpu.memory_mut().ram[0x207] = 0x0F;
+            self.cpu.memory_mut().ram[0x22B] = 0xFE;
+            self.cpu.memory_mut().ram[0x28] = 0xD7;
+            self.cpu.memory_mut().ram[0x29] = 0x17;
+            self.hle_syscalls = true;
         }
 
         // Load game into flash at 0x20D000
@@ -253,7 +269,7 @@ impl Emulator {
         use crate::syscall::SyscallResult;
 
         match target {
-            // LCD syscalls
+            // LCD syscalls (0xE000-0xE01B)
             0xE000 => {
                 // lcd_init
                 self.lcd.clear();
@@ -273,15 +289,45 @@ impl Emulator {
                 SyscallResult::handled()
             }
             0xE009 => {
-                // lcd_char
+                // lcd_char - draw character at cursor position
                 let ch = self.cpu.a();
-                log::trace!("lcd_char: 0x{:02X}", ch);
+                let x = self.lcd.cursor_x();
+                let y = self.lcd.cursor_y();
+                let font_bitmap = crate::font_data::get_font_bitmap(ch);
+                for row in 0..8u8 {
+                    let byte = font_bitmap[row as usize];
+                    for bit in 0..8u8 {
+                        if byte & (1 << (7 - bit)) != 0 {
+                            self.lcd.set_pixel(x + bit, y + row, true);
+                        }
+                    }
+                }
+                self.lcd.set_cursor(x + 8, y);
                 SyscallResult::handled()
             }
             0xE00C => {
-                // lcd_string
+                // lcd_string - draw string at cursor position
                 let addr = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
-                log::trace!("lcd_string: addr=0x{:04X}", addr);
+                let mut x = self.lcd.cursor_x();
+                let y = self.lcd.cursor_y();
+                let mut offset = 0u16;
+                loop {
+                    let ch = self.cpu.memory().read(addr + offset);
+                    if ch == 0 { break; }
+                    let font_bitmap = crate::font_data::get_font_bitmap(ch);
+                    for row in 0..8u8 {
+                        let byte = font_bitmap[row as usize];
+                        for bit in 0..8u8 {
+                            if byte & (1 << (7 - bit)) != 0 {
+                                self.lcd.set_pixel(x + bit, y + row, true);
+                            }
+                        }
+                    }
+                    x = x.wrapping_add(8);
+                    offset += 1;
+                    if offset > 255 { break; }
+                }
+                self.lcd.set_cursor(x, y);
                 SyscallResult::handled()
             }
             0xE00F => {
@@ -293,12 +339,35 @@ impl Emulator {
             }
             0xE012 => {
                 // lcd_rect
-                log::trace!("lcd_rect");
+                let x = self.cpu.x();
+                let y = self.cpu.y();
+                let w = self.cpu.a();
+                let h = self.cpu.memory().read(0x20);
+                self.lcd.fill_rect(x, y, w, h, true);
                 SyscallResult::handled()
             }
             0xE015 => {
                 // lcd_line
-                log::trace!("lcd_line");
+                let x1 = self.cpu.x();
+                let y1 = self.cpu.y();
+                let x2 = self.cpu.a();
+                let y2 = self.cpu.memory().read(0x20);
+                let dx = (x2 as i16 - x1 as i16).abs();
+                let dy = (y2 as i16 - y1 as i16).abs();
+                let sx = if x1 < x2 { 1i16 } else { -1i16 };
+                let sy = if y1 < y2 { 1i16 } else { -1i16 };
+                let mut err = dx - dy;
+                let mut x = x1 as i16;
+                let mut y = y1 as i16;
+                loop {
+                    if x >= 0 && x < 159 && y >= 0 && y < 96 {
+                        self.lcd.set_pixel(x as u8, y as u8, true);
+                    }
+                    if x == x2 as i16 && y == y2 as i16 { break; }
+                    let e2 = 2 * err;
+                    if e2 > -dy { err -= dy; x += sx; }
+                    if e2 < dx { err += dx; y += sy; }
+                }
                 SyscallResult::handled()
             }
             0xE018 => {
@@ -312,7 +381,7 @@ impl Emulator {
                 SyscallResult::handled()
             }
 
-            // Keyboard syscalls
+            // Keyboard syscalls (0xE020-0xE029)
             0xE020 => {
                 // key_get
                 let key = self.input.get_key();
@@ -334,7 +403,7 @@ impl Emulator {
                 SyscallResult::with_return(key)
             }
 
-            // Audio syscalls
+            // Audio syscalls (0xE030-0xE039)
             0xE030 => {
                 // beep
                 let freq = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
@@ -349,8 +418,17 @@ impl Emulator {
                 self.audio.stop();
                 SyscallResult::handled()
             }
+            0xE036 => {
+                // music_play - not fully implemented
+                SyscallResult::handled()
+            }
+            0xE039 => {
+                // music_stop
+                self.audio.stop();
+                SyscallResult::handled()
+            }
 
-            // Timer syscalls
+            // Timer syscalls (0xE040-0xE04C)
             0xE040 => {
                 // timer_set
                 let channel = self.cpu.a() as usize;
@@ -383,22 +461,83 @@ impl Emulator {
                 };
                 SyscallResult::with_return(value)
             }
+            0xE049 => {
+                // rtc_write
+                let field = self.cpu.a() as usize;
+                let value = self.cpu.x();
+                match field {
+                    0 => self.cpu.memory_mut().ram[0x234] = value,
+                    1 => self.cpu.memory_mut().ram[0x235] = value,
+                    2 => self.cpu.memory_mut().ram[0x236] = value,
+                    3 => self.cpu.memory_mut().ram[0x237] = value,
+                    4 => self.cpu.memory_mut().ram[0x238] = value,
+                    _ => {}
+                }
+                SyscallResult::handled()
+            }
+            0xE04C => {
+                // delay
+                let ms = self.cpu.a() as u32;
+                SyscallResult { handled: true, return_value: None, cycles: ms * 4000 }
+            }
 
-            // String syscalls
+            // String syscalls (0xE050-0xE05F)
             0xE050 => {
                 // strlen
                 let addr = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
                 let mut len = 0u8;
                 loop {
-                    if self.cpu.memory().read(addr + len as u16) == 0 {
-                        break;
-                    }
+                    if self.cpu.memory().read(addr + len as u16) == 0 { break; }
                     len = len.wrapping_add(1);
-                    if len == 0 {
-                        break;
-                    }
+                    if len == 0 { break; }
                 }
                 SyscallResult::with_return(len)
+            }
+            0xE053 => {
+                // strcpy
+                let dst = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
+                let src = self.cpu.memory().read16(0x20);
+                let mut i = 0u16;
+                loop {
+                    let byte = self.cpu.memory().read(src + i);
+                    self.cpu.memory_mut().write(dst + i, byte);
+                    if byte == 0 { break; }
+                    i = i.wrapping_add(1);
+                }
+                SyscallResult::handled()
+            }
+            0xE056 => {
+                // strcmp
+                let str1 = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
+                let str2 = self.cpu.memory().read16(0x20);
+                let mut i = 0u16;
+                loop {
+                    let c1 = self.cpu.memory().read(str1 + i);
+                    let c2 = self.cpu.memory().read(str2 + i);
+                    if c1 != c2 {
+                        return SyscallResult::with_return(if c1 < c2 { 0xFF } else { 0x01 });
+                    }
+                    if c1 == 0 { return SyscallResult::with_return(0); }
+                    i = i.wrapping_add(1);
+                }
+            }
+            0xE059 => {
+                // strcat
+                let dst = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
+                let src = self.cpu.memory().read16(0x20);
+                let mut dst_end = 0u16;
+                loop {
+                    if self.cpu.memory().read(dst + dst_end) == 0 { break; }
+                    dst_end = dst_end.wrapping_add(1);
+                }
+                let mut i = 0u16;
+                loop {
+                    let byte = self.cpu.memory().read(src + i);
+                    self.cpu.memory_mut().write(dst + dst_end + i, byte);
+                    if byte == 0 { break; }
+                    i = i.wrapping_add(1);
+                }
+                SyscallResult::handled()
             }
             0xE05C => {
                 // memcpy
@@ -422,7 +561,29 @@ impl Emulator {
                 SyscallResult::handled()
             }
 
-            // System syscalls
+            // File syscalls (0xE060-0xE06C)
+            0xE060 => {
+                // file_open - return error for HLE
+                SyscallResult::with_return(0xFF)
+            }
+            0xE063 => {
+                // file_read - return 0 bytes read
+                SyscallResult::with_return(0)
+            }
+            0xE066 => {
+                // file_write - return 0 bytes written
+                SyscallResult::with_return(0)
+            }
+            0xE069 => {
+                // file_close - return success
+                SyscallResult::handled()
+            }
+            0xE06C => {
+                // file_delete - return success for HLE
+                SyscallResult::with_return(0)
+            }
+
+            // System syscalls (0xE070-0xE079)
             0xE070 => {
                 // sys_init
                 self.lcd.clear();
@@ -434,6 +595,10 @@ impl Emulator {
                 // power_off
                 log::info!("Power off requested");
                 SyscallResult::handled()
+            }
+            0xE076 => {
+                // sys_info - return model 4980
+                SyscallResult::with_return(0)
             }
             0xE079 => {
                 // random
@@ -449,354 +614,91 @@ impl Emulator {
                 SyscallResult::handled()
             }
 
-            // BBK OS functions (4980 model)
-            // 0xD2F6: Generic far-call via descriptor
-            // Parameters: [0x26:0x27]=pointer to descriptor (3 bytes: target_low, target_high, segment)
-            // A register contains the first parameter for the target function
+            // BBK OS functions (pure HLE mode - no OS ROM)
             0xD2F6 => {
-                let a_val = self.cpu.a();
-                let descriptor_addr =
-                    self.cpu.memory().ram[0x26] as u16 | (self.cpu.memory().ram[0x27] as u16) << 8;
-
-                // Try to get descriptor from hardcoded table first
-                let descriptor = self.hle_descriptor(descriptor_addr);
-                let (target, segment) = descriptor.unwrap_or_else(|| {
-                    // Fallback: read from memory
-                    let target = self.cpu.memory().read16(descriptor_addr);
-                    let segment = self.cpu.memory().read(descriptor_addr.wrapping_add(2));
-                    (target, segment)
-                });
-
-                log::info!(
-                    "D2F6: descriptor_addr=0x{descriptor_addr:04X} target=0x{target:04X} segment=0x{segment:02X} A=0x{a_val:02X}"
-                );
-
-                // Dispatch based on segment and target
-                // Note: We don't set PC here because D2F6 is a JSR target
-                // The game will return to the instruction after JSR $D2F6
-                match segment {
-                    0x04 => {
-                        // Utility functions - return success
-                        self.cpu.set_a(0);
-                    }
-                    0x05 => {
-                        // System functions - return success
-                        self.cpu.set_a(0);
-                    }
-                    0x06 => {
-                        // String/Math functions
-                        match target {
-                            // strlen
-                            0x624D => {
-                                let addr = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
-                                let mut len = 0u8;
-                                loop {
-                                    if self.cpu.memory().read(addr + len as u16) == 0 {
-                                        break;
-                                    }
-                                    len = len.wrapping_add(1);
-                                    if len == 0 { break; }
-                                }
-                                self.cpu.set_a(len);
-                            }
-                            _ => {
-                                log::debug!("Unknown segment0x06 function 0x{target:04X} in D2F6");
-                            }
-                        }
-                    }
-                    0x07 => {
-                        // LCD/Graphics functions
-                        match target {
-                            // lcd_draw_char
-                            0x7770 => {
-                                // Read cursor position from software stack
-                                let stack_ptr = self.cpu.memory().read16(0x28);
-                                let pos = self.cpu.memory().read16(stack_ptr);
-                                let fb_addr = if pos >=0x0400 && pos <0x1000 {
-                                    (pos -0x0400) as usize
-                                } else {
-                                    0
-                                };
-                                log::info!(
-                                    "lcd_draw_char: ch=0x{:02X} pos=0x{:04X} fb=0x{:04X} sp=0x{:04X}",
-                                    a_val, pos, fb_addr, stack_ptr
-                                );
-                                let font_bitmap = crate::font_data::get_font_bitmap(a_val);
-                                for row in 0..8 {
-                                    let offset = fb_addr + row * 20;
-                                    if offset <0x0C00 {
-                                        self.cpu.memory_mut().ram[0x0400 + offset] = font_bitmap[row];
-                                    }
-                                }
-                            }
-                            // volume_set
-                            0x7716 => {
-                                if a_val == 0 {
-                                    self.cpu.memory_mut().ram[0x201B] &= 0xFB;
-                                } else {
-                                    self.cpu.memory_mut().ram[0x201B] |= 0x04;
-                                }
-                            }
-                            // volume_get
-                            0x772E => {
-                                let muted = self.cpu.memory().ram[0x201B] & 0x04;
-                                self.cpu.set_a(if muted != 0 { 1 } else { 0 });
-                            }
-                            // rtc_get_sec
-                            0x759F => {
-                                let sec = self.cpu.memory().ram[0x234] & 0x3F;
-                                self.cpu.set_a(sec);
-                            }
-                            // lcd_enable
-                            0x7CE5 => {
-                                let lcd_active = self.cpu.memory().ram[0x2059];
-                                if lcd_active != 0 {
-                                    self.cpu.memory_mut().ram[0x021A] = 0xDF;
-                                    self.cpu.memory_mut().ram[0x0219] = 0x20;
-                                    self.cpu.memory_mut().ram[0x0218] = 0xFF;
-                                    self.cpu.memory_mut().ram[0x021D] = 0xEB;
-                                    self.cpu.memory_mut().ram[0x021C] = 0x14;
-                                    self.cpu.memory_mut().ram[0x021B] |= 0x3F;
-                                    self.cpu.memory_mut().ram[0x021B] &= 0xDF;
-                                    self.cpu.memory_mut().ram[0x021B] &= 0xF7;
-                                    self.cpu.memory_mut().ram[0x021B] |= 0x01;
-                                    self.cpu.memory_mut().ram[0x021B] |= 0x1F;
-                                    self.cpu.memory_mut().ram[0x021B] |= 0x02;
-                                }
-                                self.cpu.set_a(0);
-                            }
-                            _ => {
-                                log::debug!("Unknown segment0x07 function 0x{target:04X} in D2F6");
-                            }
-                        }
-                    }
-                    0x08 => {
-                        // File/System functions
-                        // Game data is at flash offset 0xD000
-                        const GAME_DATA_FLASH: u32 = 0xD000;
-                        match target {
-                            // file_open - open game data file
-                            // A = mode, [0x20:0x21] = filename pointer
-                            0x5000 => {
-                                // Return handle 0 (success)
-                                self.cpu.set_a(0x00);
-                            }
-                            // file_read - read from game data
-                            // A = handle, X/Y = buffer addr, [0x20:0x21] = count
-                            // Returns bytes read in A
-                            0x5093 => {
-                                let handle = a_val;
-                                let buf_addr = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
-                                let count = self.cpu.memory().read16(0x20);
-                                // Read file position from RAM (stored at 0x2060-0x2063)
-                                let pos_lo = self.cpu.memory().ram[0x2060];
-                                let pos_hi = self.cpu.memory().ram[0x2061];
-                                let file_pos = pos_lo as u32 | (pos_hi as u32) << 8;
-                                // Read from flash
-                                let flash_addr = GAME_DATA_FLASH + file_pos;
-                                let mut bytes_read = 0u16;
-                                for i in 0..count {
-                                    let byte = self.cpu.memory().read_physical(flash_addr + i as u32);
-                                    self.cpu.memory_mut().write(buf_addr + i, byte);
-                                    bytes_read += 1;
-                                }
-                                // Advance file position
-                                let new_pos = file_pos + bytes_read as u32;
-                                self.cpu.memory_mut().ram[0x2060] = new_pos as u8;
-                                self.cpu.memory_mut().ram[0x2061] = (new_pos >> 8) as u8;
-                                self.cpu.set_a(bytes_read as u8);
-                            }
-                            // file_write
-                            0x5D45 => {
-                                self.cpu.set_a(0); //0 bytes written
-                            }
-                            // file_close
-                            0x5FF3 => {
-                                self.cpu.set_a(0); // Success
-                            }
-                            // file_delete
-                            0x6111 => {
-                                self.cpu.set_a(0xFF); // Error
-                            }
-                            // file_eof - check end of file
-                            0x6A79 => {
-                                let pos_lo = self.cpu.memory().ram[0x2060];
-                                let pos_hi = self.cpu.memory().ram[0x2061];
-                                let file_pos = pos_lo as u32 | (pos_hi as u32) << 8;
-                                // Game data is up to 32KB
-                                let game_size = 0x8000u32;
-                                self.cpu.set_a(if file_pos >= game_size { 1 } else { 0 });
-                            }
-                            // file_tell - get file position
-                            0x7093 => {
-                                let pos_lo = self.cpu.memory().ram[0x2060];
-                                let pos_hi = self.cpu.memory().ram[0x2061];
-                                // Return position in X/Y
-                                self.cpu.set_a(pos_lo);
-                            }
-                            // file_seek - seek in file
-                            // A = handle, X/Y = offset, [0x20] = whence (0=SET, 1=CUR, 2=END)
-                            0x7D92 => {
-                                let offset = self.cpu.x() as u32 | (self.cpu.y() as u32) << 8;
-                                let whence = self.cpu.memory().ram[0x20];
-                                let pos_lo = self.cpu.memory().ram[0x2060];
-                                let pos_hi = self.cpu.memory().ram[0x2061];
-                                let cur_pos = pos_lo as u32 | (pos_hi as u32) << 8;
-                                let new_pos = match whence {
-                                    0 => offset, // SET
-                                    1 => cur_pos.wrapping_add(offset), // CUR
-                                    2 => 0x8000u32.wrapping_sub(offset), // END
-                                    _ => offset,
-                                };
-                                self.cpu.memory_mut().ram[0x2060] = new_pos as u8;
-                                self.cpu.memory_mut().ram[0x2061] = (new_pos >> 8) as u8;
-                                self.cpu.set_a(0); // Success
-                            }
-                            _ => {
-                                log::debug!("Unknown segment0x08 function 0x{target:04X} in D2F6");
-                            }
-                        }
-                    }
-                    0x0D => {
-                        // Initialization functions
-                        match target {
-                            0x6911 => {
-                                self.cpu.memory_mut().ram[0x216A] = 0;
-                                for i in 0..4 {
-                                    let offset = i * 0x0C;
-                                    self.cpu.memory_mut().ram[0x2122 + offset] = 0;
-                                }
-                                self.cpu.set_a(0);
-                            }
-                            _ => {
-                                log::debug!("Unknown segment0x0D function 0x{target:04X} in D2F6");
-                            }
-                        }
-                    }
-                    _ => {
-                        log::debug!("Unknown segment 0x{segment:02X} in D2F6 descriptor");
-                        self.cpu.set_a(0);
-                    }
-                }
-
-                SyscallResult::handled()
-            }
-
-            // 0xDACA: Set cursor position
-            // Parameters: A=value, [0x20:0x21]=position in LCD coordinates
-            0xDACA => {
-                let stack = self.cpu.memory().read16(0x28).wrapping_sub(2);
-                let lo = self.cpu.memory().read(0x20);
-                let hi = self.cpu.memory().read(0x21);
+                // D2F6 far-call dispatcher
+                // Pop 2 bytes from software stack (matching OS ROM behavior)
+                let stack = self.cpu.memory().read16(0x28).wrapping_add(2);
                 self.cpu.memory_mut().write(0x28, stack as u8);
                 self.cpu.memory_mut().write(0x29, (stack >> 8) as u8);
-                self.cpu.memory_mut().write(stack, lo);
-                self.cpu.memory_mut().write(stack.wrapping_add(1), hi);
-
-                SyscallResult::handled()
+                self.handle_d2f6()
             }
 
-            // Push A onto the compiler-managed software stack.
-            0xDAAA => {
-                let stack = self.cpu.memory().read16(0x28).wrapping_sub(1);
-                let value = self.cpu.a();
-                self.cpu.memory_mut().write(0x28, stack as u8);
-                self.cpu.memory_mut().write(0x29, (stack >> 8) as u8);
-                self.cpu.memory_mut().write(stack, value);
-                SyscallResult::handled()
-            }
+            // E8F8 - bank switch setup (just return in HLE mode)
+            0xE8F8 => SyscallResult::handled(),
+            // E8FB - segment switch (just return in HLE mode)
+            0xE8FB => SyscallResult::handled(),
+            // E8FE - bank restore (just return in HLE mode)
+            0xE8FE => SyscallResult::handled(),
+            // D572 - function pointer call (just return in HLE mode)
+            0xD572 => SyscallResult::handled(),
 
-            // 0xD340: Draw string or block
-            // Parameters: [0x20:0x21]=source address, [0x26:0x27]=dest address
-            0xD340 => {
-                let src =
-                    self.cpu.memory().ram[0x20] as u16 | (self.cpu.memory().ram[0x21] as u16) << 8;
-                let dst =
-                    self.cpu.memory().ram[0x26] as u16 | (self.cpu.memory().ram[0x27] as u16) << 8;
-
-                // Copy data from src to dst
-                // This is used for copying screen regions or drawing blocks
-                for i in 0..32 {
-                    let byte = self.cpu.memory().read(src + i);
-                    if byte == 0 {
-                        break;
-                    }
-                    if dst + i >= 0x0400 && dst + i < 0x1000 {
-                        self.cpu.memory_mut().ram[(dst + i) as usize] = byte;
-                    }
-                }
-
-                SyscallResult::handled()
-            }
-
-            // 0xD300: Clear screen area
+            // LCD drawing functions
             0xD300 => {
-                // Clear LCD framebuffer
+                // lcd_clear_area
                 for i in 0x0400..0x1000 {
                     self.cpu.memory_mut().ram[i] = 0;
                 }
                 SyscallResult::handled()
             }
-
-            // 0xD320: Draw horizontal line
             0xD320 => {
+                // lcd_hline
                 let y = self.cpu.a();
                 let x1 = self.cpu.x();
                 let x2 = self.cpu.y();
-
-                // Draw horizontal line at y from x1 to x2
                 for x in x1..=x2 {
                     self.lcd.set_pixel(x, y, true);
                 }
-
                 SyscallResult::handled()
             }
-
-            // 0xD360: Draw vertical line
+            0xD340 => {
+                // lcd_draw_block
+                let src = self.cpu.memory().ram[0x20] as u16 | (self.cpu.memory().ram[0x21] as u16) << 8;
+                let dst = self.cpu.memory().ram[0x26] as u16 | (self.cpu.memory().ram[0x27] as u16) << 8;
+                for i in 0..32 {
+                    let byte = self.cpu.memory().read(src + i);
+                    if byte == 0 { break; }
+                    if dst + i >= 0x0400 && dst + i < 0x1000 {
+                        self.cpu.memory_mut().ram[(dst + i) as usize] = byte;
+                    }
+                }
+                SyscallResult::handled()
+            }
             0xD360 => {
+                // lcd_vline
                 let x = self.cpu.a();
                 let y1 = self.cpu.x();
                 let y2 = self.cpu.y();
-
-                // Draw vertical line at x from y1 to y2
                 for y in y1..=y2 {
                     self.lcd.set_pixel(x, y, true);
                 }
-
                 SyscallResult::handled()
             }
-
-            // 0xD380: Fill rectangle
             0xD380 => {
+                // lcd_fill_rect
                 let x = self.cpu.memory().ram[0x20];
                 let y = self.cpu.memory().ram[0x21];
                 let w = self.cpu.memory().ram[0x22];
                 let h = self.cpu.memory().ram[0x23];
-
-                // Fill rectangle
-                for dy in 0..h {
-                    for dx in 0..w {
-                        self.lcd.set_pixel(x + dx, y + dy, true);
-                    }
-                }
-
+                self.lcd.fill_rect(x, y, w, h, true);
                 SyscallResult::handled()
             }
 
-            // 0xD3A0: Get key input
+            // Keyboard functions
             0xD3A0 => {
+                // os_key_get
                 let key = self.input.get_key();
                 SyscallResult::with_return(key)
             }
-
-            // 0xD3C0: Check key hit
             0xD3C0 => {
+                // os_key_hit
                 let has_key = self.input.key_hit();
                 SyscallResult::with_return(if has_key { 1 } else { 0 })
             }
 
-            // 0xD400: Play sound
+            // Audio functions
             0xD400 => {
+                // os_beep
                 let freq = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
                 let duration = self.cpu.a() as u16;
                 if freq > 0 {
@@ -805,64 +707,32 @@ impl Emulator {
                 SyscallResult::handled()
             }
 
-            // 0xD420: Delay/wait
+            // Timer functions
             0xD420 => {
+                // os_delay
                 let ms = self.cpu.a() as u32;
-                // Just consume some cycles
-                SyscallResult {
-                    handled: true,
-                    return_value: None,
-                    cycles: ms * 4000,
-                }
+                SyscallResult { handled: true, return_value: None, cycles: ms * 4000 }
             }
 
-            // 0xD6AF: Complex drawing/positioning function
-            0xD6AF => {
-                // This is a complex function that deals with drawing coordinates
-                // For HLE, just return success
-                SyscallResult::handled()
-            }
-
-            // 0xE901: Jump to 0xF5BD - table/buffer init
-            0xE901 => {
-                SyscallResult::handled()
-            }
-
-            // 0xE904: Jump to 0xF68A - screen init
-            0xE904 => {
-                SyscallResult::handled()
-            }
-
-            // 0xE907: Jump to 0xF475 - drawing helper
-            0xE907 => {
-                SyscallResult::handled()
-            }
-
-            // 0xE90A: Jump to 0xF457 - clear helper
-            0xE90A => {
-                SyscallResult::handled()
-            }
-
-            // 0xD596: Add 8 to [0x2A:0x2B], store in [0x20:0x21]
+            // Drawing helper functions
             0xD596 => {
+                // draw_offset_8
                 let addr = self.cpu.memory().read16(0x2A);
                 let result = addr.wrapping_add(8);
                 self.cpu.memory_mut().write(0x20, result as u8);
                 self.cpu.memory_mut().write(0x21, (result >> 8) as u8);
                 SyscallResult::handled()
             }
-
-            // 0xD5A6: Add 0x20 to [0x2A:0x2B], store in [0x23:0x24]
             0xD5A6 => {
+                // draw_offset_20
                 let addr = self.cpu.memory().read16(0x2A);
                 let result = addr.wrapping_add(0x20);
                 self.cpu.memory_mut().write(0x23, result as u8);
                 self.cpu.memory_mut().write(0x24, (result >> 8) as u8);
                 SyscallResult::handled()
             }
-
-            // 0xD5B6: Add 0x18 to [0x2A:0x2B], store in [0x23:0x24]
             0xD5B6 => {
+                // draw_offset_18
                 let addr = self.cpu.memory().read16(0x2A);
                 let result = addr.wrapping_add(0x18);
                 self.cpu.memory_mut().write(0x23, result as u8);
@@ -870,9 +740,9 @@ impl Emulator {
                 SyscallResult::handled()
             }
 
-            // 0xD2CA: Bitmap AND operation
-            // Reads from [0x20:0x21] and [0x23:0x24], ANDs, stores at [0x2A:0x2B]+8
+            // Bitmap operations
             0xD2CA => {
+                // bitmap_and
                 let src1 = self.cpu.memory().read16(0x20);
                 let src2 = self.cpu.memory().read16(0x23);
                 let dst = self.cpu.memory().read16(0x2A);
@@ -881,7 +751,6 @@ impl Emulator {
                     let b2 = self.cpu.memory().read(src2 + i);
                     self.cpu.memory_mut().write(dst + 8 + i, b1 & b2);
                 }
-                // Call 0xD596 to update [0x20:0x21]
                 let addr = self.cpu.memory().read16(0x2A);
                 let result = addr.wrapping_add(8);
                 self.cpu.memory_mut().write(0x20, result as u8);
@@ -889,16 +758,15 @@ impl Emulator {
                 SyscallResult::handled()
             }
 
-            // 0xD362: Compare [0x20:0x21] with [0x23:0x24]
+            // Compare/multiply functions
             0xD362 => {
+                // compare16
                 let val1 = self.cpu.memory().read16(0x20);
                 let val2 = self.cpu.memory().read16(0x23);
-                self.cpu.set_a(if val1 == val2 { 0 } else { 1 });
-                SyscallResult::handled()
+                SyscallResult::with_return(if val1 == val2 { 0 } else { 1 })
             }
-
-            // 0xD1A2: Multiply [0x20:0x21] by [0x23:0x24], store in [0x26:0x27]
             0xD1A2 => {
+                // multiply16
                 let a = self.cpu.memory().read16(0x20);
                 let b = self.cpu.memory().read16(0x23);
                 let result = (a as u32).wrapping_mul(b as u32);
@@ -907,48 +775,45 @@ impl Emulator {
                 SyscallResult::handled()
             }
 
-            // 0xD6AF: Drawing/positioning function
-            0xD6AF => {
-                // Complex function, just return for now
+            // Stack operations
+            0xDAAA => {
+                // push_a
+                let stack = self.cpu.memory().read16(0x28).wrapping_sub(1);
+                let value = self.cpu.a();
+                self.cpu.memory_mut().write(0x28, stack as u8);
+                self.cpu.memory_mut().write(0x29, (stack >> 8) as u8);
+                self.cpu.memory_mut().write(stack, value);
                 SyscallResult::handled()
             }
-
-            // 0xE8F8: Segment dispatch - bank switch setup
-            0xE8F8 => {
-                // Save current bank mapping and set up for segment call
+            0xDACA => {
+                // set_cursor_stack
+                let stack = self.cpu.memory().read16(0x28).wrapping_sub(2);
+                let lo = self.cpu.memory().read(0x20);
+                let hi = self.cpu.memory().read(0x21);
+                log::info!("DACA: stack=0x{:04X} [0x20:0x21]=0x{:02X}{:02X}", stack, hi, lo);
+                self.cpu.memory_mut().write(0x28, stack as u8);
+                self.cpu.memory_mut().write(0x29, (stack >> 8) as u8);
+                self.cpu.memory_mut().write(stack, lo);
+                self.cpu.memory_mut().write(stack.wrapping_add(1), hi);
                 SyscallResult::handled()
             }
-
-            // 0xE8FB: Segment dispatch - bank switch setup
-            0xE8FB => {
+            0xDAE6 => {
+                // copy_16
+                let src = self.cpu.memory().read16(0x23);
+                let dst = self.cpu.memory().read16(0x20);
+                for i in 0..2 {
+                    let byte = self.cpu.memory().read(src + i);
+                    self.cpu.memory_mut().write(dst + i, byte);
+                }
                 SyscallResult::handled()
             }
-
-            // 0xE8FE: Segment dispatch - bank switch restore
-            0xE8FE => {
-                SyscallResult::handled()
+            0xDBE1 => {
+                // test_not_zero
+                let val = self.cpu.memory().read16(0x23);
+                SyscallResult::with_return(if val == 0 { 0 } else { 1 })
             }
-
-            // 0xD572: Function pointer call via stack
-            // Decrements [0x26:0x27] by 1 and jumps to it
-            0xD572 => {
-                let addr = self.cpu.memory().read16(0x26);
-                let target = addr.wrapping_sub(1);
-                self.cpu.memory_mut().write(0x26, target as u8);
-                self.cpu.memory_mut().write(0x27, (target >> 8) as u8);
-                // Push return address and jump
-                let pc = self.cpu.pc();
-                let sp = self.cpu.sp();
-                let ret = pc.wrapping_sub(1); // Return to instruction after JSR
-                self.cpu.memory_mut().ram[0x100 | sp as usize] = (ret >> 8) as u8;
-                self.cpu.memory_mut().ram[0x100 | sp.wrapping_sub(1) as usize] = ret as u8;
-                self.cpu.set_sp(sp.wrapping_sub(2));
-                self.cpu.set_pc(target);
-                SyscallResult::handled()
-            }
-
-            // 0xDCEF: Push 4 bytes from [0x20:0x21] onto stack
             0xDCEF => {
+                // push_4_bytes
                 let addr = self.cpu.memory().read16(0x20);
                 let sp = self.cpu.sp();
                 for i in 0..4 {
@@ -959,89 +824,51 @@ impl Emulator {
                 SyscallResult::handled()
             }
 
-            // 0xD340: Compare and set flags
-            0xD340 => {
-                let val1 = self.cpu.memory().read16(0x20);
-                let val2 = self.cpu.memory().read16(0x23);
-                self.cpu.set_a(if val1 == val2 { 0 } else { 1 });
-                SyscallResult::handled()
-            }
-
-            // 0xDAE6: Copy [0x23:0x24] to [0x20:0x21]
-            0xDAE6 => {
-                let src = self.cpu.memory().read16(0x23);
-                let dst = self.cpu.memory().read16(0x20);
-                for i in 0..2 {
-                    let byte = self.cpu.memory().read(src + i);
-                    self.cpu.memory_mut().write(dst + i, byte);
+            // Segment dispatch functions
+            0xE8F8 => {
+                // Segment dispatch - bank switch setup
+                // Read segment from A register and setup bank mapping
+                let segment = self.cpu.a();
+                let data_base = self.cpu.memory().ram[0x2029] as u32 | (self.cpu.memory().ram[0x202A] as u32) << 8;
+                let base = data_base + (segment as u32) * 4;
+                for i in 0..4 {
+                    self.cpu.memory_mut().bank_switch.set(5 + i, base + i as u32);
                 }
                 SyscallResult::handled()
             }
-
-            // 0xDBE1: Loop/counter function
-            0xDBE1 => {
-                let val = self.cpu.memory().read16(0x23);
-                self.cpu.set_a(if val == 0 { 0 } else { 1 });
+            0xE8FB => {
+                // Segment dispatch - execute function in segment
+                SyscallResult::handled()
+            }
+            0xE8FE => {
+                // Segment dispatch - restore bank mapping
                 SyscallResult::handled()
             }
 
-            // 0xDC80: Set cursor position from stack
-            0xDC80 => {
+            // Other helper functions
+            0xE901 | 0xE904 | 0xE907 | 0xE90A => {
                 SyscallResult::handled()
             }
 
-            // 0xD85F: Drawing helper
-            0xD85F => {
+            // Drawing helpers
+            0xD6AF | 0xDC80 | 0xD85F | 0xDD38 | 0xDCB1 | 0xD29D | 0xDB19 |
+            0xDCF7 | 0xDC83 | 0xD201 | 0xD0A8 | 0xDCAB | 0xDCF4 => {
                 SyscallResult::handled()
             }
 
-            // 0xDD38: Stack operation
-            0xDD38 => {
-                SyscallResult::handled()
-            }
-
-            // 0xDCB1: Drawing helper
-            0xDCB1 => {
-                SyscallResult::handled()
-            }
-
-            // 0xD29D: Drawing helper
-            0xD29D => {
-                SyscallResult::handled()
-            }
-
-            // 0xDB19: Drawing helper
-            0xDB19 => {
-                SyscallResult::handled()
-            }
-
-            // 0xDCF7: Stack operation
-            0xDCF7 => {
-                SyscallResult::handled()
-            }
-
-            // 0xDC83: Drawing helper
-            0xDC83 => {
-                SyscallResult::handled()
-            }
-
-            // 0xD201: Drawing helper
-            0xD201 => {
-                SyscallResult::handled()
-            }
-
-            // 0xD0A8: Drawing helper
-            0xD0A8 => {
-                SyscallResult::handled()
-            }
-
-            // 0xDCAB: Drawing helper
-            0xDCAB => {
-                SyscallResult::handled()
-            }
-
-            // 0xDCF4: Stack operation
-            0xDCF4 => {
+            // Function pointer call
+            0xD572 => {
+                let addr = self.cpu.memory().read16(0x26);
+                let target = addr.wrapping_sub(1);
+                self.cpu.memory_mut().write(0x26, target as u8);
+                self.cpu.memory_mut().write(0x27, (target >> 8) as u8);
+                let pc = self.cpu.pc();
+                let sp = self.cpu.sp();
+                let ret = pc.wrapping_sub(1);
+                self.cpu.memory_mut().ram[0x100 | sp as usize] = (ret >> 8) as u8;
+                self.cpu.memory_mut().ram[0x100 | sp.wrapping_sub(1) as usize] = ret as u8;
+                self.cpu.set_sp(sp.wrapping_sub(2));
+                self.cpu.set_pc(target);
                 SyscallResult::handled()
             }
 
@@ -1051,6 +878,262 @@ impl Emulator {
                 SyscallResult::not_handled()
             }
         }
+    }
+
+    /// Handle D2F6 far-call dispatcher
+    fn handle_d2f6(&mut self) -> crate::syscall::SyscallResult {
+        use crate::syscall::SyscallResult;
+
+        let a_val = self.cpu.a();
+        let descriptor_addr =
+            self.cpu.memory().ram[0x26] as u16 | (self.cpu.memory().ram[0x27] as u16) << 8;
+
+        // Try to get descriptor from hardcoded table first
+        let descriptor = self.hle_descriptor(descriptor_addr);
+        let (target, segment) = descriptor.unwrap_or_else(|| {
+            let target = self.cpu.memory().read16(descriptor_addr);
+            let segment = self.cpu.memory().read(descriptor_addr.wrapping_add(2));
+            (target, segment)
+        });
+
+        log::debug!(
+            "D2F6: desc=0x{descriptor_addr:04X} tgt=0x{target:04X} seg=0x{segment:02X} A=0x{a_val:02X}"
+        );
+
+        // For segments >= 0xE0, setup bank switching and execute
+        if segment >= 0xE0 {
+            let data_base = self.cpu.memory().ram[0x2029] as u32 | (self.cpu.memory().ram[0x202A] as u32) << 8;
+            let base = data_base + ((segment - 0xE0) as u32) * 4;
+            for i in 0..4 {
+                self.cpu.memory_mut().bank_switch.set(5 + i, base + i as u32);
+            }
+        }
+
+        // Dispatch based on segment and target
+        match segment {
+            0x04 => {
+                // Utility functions - return success
+                self.cpu.set_a(0);
+            }
+            0x05 => {
+                // System functions - return success
+                self.cpu.set_a(0);
+            }
+            0x06 => {
+                // String/Math functions
+                match target {
+                    0x624D => {
+                        // strlen
+                        let addr = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
+                        let mut len = 0u8;
+                        loop {
+                            if self.cpu.memory().read(addr + len as u16) == 0 {
+                                break;
+                            }
+                            len = len.wrapping_add(1);
+                            if len == 0 { break; }
+                        }
+                        self.cpu.set_a(len);
+                    }
+                    _ => {
+                        log::debug!("Unknown segment0x06 function 0x{target:04X} in D2F6");
+                    }
+                }
+            }
+            0x07 => {
+                // LCD/Graphics functions
+                match target {
+                    0x7770 => {
+                        // lcd_draw_char
+                        let stack_ptr = self.cpu.memory().read16(0x28);
+                        let pos = self.cpu.memory().read16(stack_ptr);
+                        let fb_addr = if pos >= 0x0400 && pos < 0x1000 {
+                            (pos - 0x0400) as usize
+                        } else {
+                            0
+                        };
+                        log::trace!(
+                            "lcd_draw_char: ch=0x{:02X} pos=0x{:04X} fb=0x{:04X} sp=0x{:04X}",
+                            a_val, pos, fb_addr, stack_ptr
+                        );
+                        // Try to read font from ROM first, fallback to built-in
+                        let font_bitmap = if let Some(ref rom) = self.cpu.memory().rom_8 {
+                            // Font ROM: each character is 8 bytes
+                            let offset = (a_val as usize) * 8;
+                            if offset + 8 <= rom.len() {
+                                let mut bitmap = [0u8; 8];
+                                bitmap.copy_from_slice(&rom[offset..offset+8]);
+                                bitmap
+                            } else {
+                                crate::font_data::get_font_bitmap(a_val)
+                            }
+                        } else {
+                            crate::font_data::get_font_bitmap(a_val)
+                        };
+                        for row in 0..8 {
+                            let offset = fb_addr + row * 20;
+                            if offset < 0x0C00 {
+                                self.cpu.memory_mut().ram[0x0400 + offset] = font_bitmap[row];
+                            }
+                        }
+                    }
+                    0x7716 => {
+                        // volume_set
+                        if a_val == 0 {
+                            self.cpu.memory_mut().ram[0x201B] &= 0xFB;
+                        } else {
+                            self.cpu.memory_mut().ram[0x201B] |= 0x04;
+                        }
+                    }
+                    0x772E => {
+                        // volume_get
+                        let muted = self.cpu.memory().ram[0x201B] & 0x04;
+                        self.cpu.set_a(if muted != 0 { 1 } else { 0 });
+                    }
+                    0x759F => {
+                        // rtc_get_sec
+                        let sec = self.cpu.memory().ram[0x234] & 0x3F;
+                        self.cpu.set_a(sec);
+                    }
+                    0x7CE5 => {
+                        // lcd_enable
+                        let lcd_active = self.cpu.memory().ram[0x2059];
+                        if lcd_active != 0 {
+                            self.cpu.memory_mut().ram[0x021A] = 0xDF;
+                            self.cpu.memory_mut().ram[0x0219] = 0x20;
+                            self.cpu.memory_mut().ram[0x0218] = 0xFF;
+                            self.cpu.memory_mut().ram[0x021D] = 0xEB;
+                            self.cpu.memory_mut().ram[0x021C] = 0x14;
+                            self.cpu.memory_mut().ram[0x021B] |= 0x3F;
+                            self.cpu.memory_mut().ram[0x021B] &= 0xDF;
+                            self.cpu.memory_mut().ram[0x021B] &= 0xF7;
+                            self.cpu.memory_mut().ram[0x021B] |= 0x01;
+                            self.cpu.memory_mut().ram[0x021B] |= 0x1F;
+                            self.cpu.memory_mut().ram[0x021B] |= 0x02;
+                        }
+                        self.cpu.set_a(0);
+                    }
+                    _ => {
+                        log::debug!("Unknown segment0x07 function 0x{target:04X} in D2F6");
+                    }
+                }
+            }
+            0x08 => {
+                // File/System functions
+                const GAME_DATA_FLASH: u32 = 0xD000;
+                match target {
+                    0x5000 => {
+                        // file_open - open game data file
+                        // A = mode, [0x20:0x21] = filename pointer
+                        // Return file handle 0 and initialize file state
+                        self.cpu.memory_mut().ram[0x2060] = 0x00; // file position low
+                        self.cpu.memory_mut().ram[0x2061] = 0x00; // file position high
+                        self.cpu.memory_mut().ram[0x2062] = 0x00; // file size low
+                        self.cpu.memory_mut().ram[0x2063] = 0x80; // file size high (=32KB)
+                        self.cpu.set_a(0x00); // handle 0
+                    }
+                    0x5093 => {
+                        // file_read - read from game data file
+                        // A = handle, X/Y = buffer address, [0x20:0x21] = count
+                        // Returns bytes read in A (low byte), but also stores
+                        // total bytes read at [0x20:0x21] for the caller.
+                        let buf_addr = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
+                        let count = self.cpu.memory().read16(0x20);
+                        let pos_lo = self.cpu.memory().ram[0x2060];
+                        let pos_hi = self.cpu.memory().ram[0x2061];
+                        let file_pos = pos_lo as u32 | (pos_hi as u32) << 8;
+                        let flash_addr = GAME_DATA_FLASH + file_pos;
+                        log::info!("file_read: buf=0x{:04X} count={} pos={} flash=0x{:05X}", buf_addr, count, file_pos, flash_addr);
+                        let mut bytes_read = 0u16;
+                        for i in 0..count {
+                            let byte = self.cpu.memory().read_physical(flash_addr + i as u32);
+                            self.cpu.memory_mut().write(buf_addr + i, byte);
+                            bytes_read += 1;
+                        }
+                        let new_pos = file_pos + bytes_read as u32;
+                        self.cpu.memory_mut().ram[0x2060] = new_pos as u8;
+                        self.cpu.memory_mut().ram[0x2061] = (new_pos >> 8) as u8;
+                        // Store bytes read in [0x20:0x21] for the caller
+                        self.cpu.memory_mut().write(0x20, bytes_read as u8);
+                        self.cpu.memory_mut().write(0x21, (bytes_read >> 8) as u8);
+                        // Return low byte of bytes_read (matching OS behavior)
+                        log::info!("file_read: bytes_read={} return={}", bytes_read, bytes_read as u8);
+                        self.cpu.set_a(bytes_read as u8);
+                    }
+                    0x5D45 => {
+                        // file_write
+                        self.cpu.set_a(0);
+                    }
+                    0x5FF3 => {
+                        // file_close
+                        self.cpu.set_a(1); // non-zero = success
+                        self.cpu.inner.registers.index_y = 1;
+                    }
+                    0x6111 => {
+                        // file_delete - return 1 for success (game checks A != 0)
+                        log::debug!("file_delete: returning A=1");
+                        self.cpu.set_a(1);
+                        self.cpu.inner.registers.index_y = 1;
+                    }
+                    0x6A79 => {
+                        // file_eof
+                        let pos_lo = self.cpu.memory().ram[0x2060];
+                        let pos_hi = self.cpu.memory().ram[0x2061];
+                        let file_pos = pos_lo as u32 | (pos_hi as u32) << 8;
+                        let game_size = 0x8000u32;
+                        self.cpu.set_a(if file_pos >= game_size { 1 } else { 0 });
+                    }
+                    0x7093 => {
+                        // file_tell
+                        let pos_lo = self.cpu.memory().ram[0x2060];
+                        self.cpu.set_a(pos_lo);
+                    }
+                    0x7D92 => {
+                        // file_seek
+                        let offset = self.cpu.x() as u32 | (self.cpu.y() as u32) << 8;
+                        let whence = self.cpu.memory().ram[0x20];
+                        let pos_lo = self.cpu.memory().ram[0x2060];
+                        let pos_hi = self.cpu.memory().ram[0x2061];
+                        let cur_pos = pos_lo as u32 | (pos_hi as u32) << 8;
+                        let new_pos = match whence {
+                            0 => offset,
+                            1 => cur_pos.wrapping_add(offset),
+                            2 => 0x8000u32.wrapping_sub(offset),
+                            _ => offset,
+                        };
+                        self.cpu.memory_mut().ram[0x2060] = new_pos as u8;
+                        self.cpu.memory_mut().ram[0x2061] = (new_pos >> 8) as u8;
+                        self.cpu.set_a(0);
+                    }
+                    _ => {
+                        log::debug!("Unknown segment0x08 function 0x{target:04X} in D2F6");
+                    }
+                }
+            }
+            0x0D => {
+                // Initialization functions
+                match target {
+                    0x6911 => {
+                        self.cpu.memory_mut().ram[0x216A] = 0;
+                        for i in 0..4 {
+                            let offset = i * 0x0C;
+                            self.cpu.memory_mut().ram[0x2122 + offset] = 0;
+                        }
+                        self.cpu.set_a(0);
+                    }
+                    _ => {
+                        log::debug!("Unknown segment0x0D function 0x{target:04X} in D2F6");
+                    }
+                }
+            }
+            _ => {
+                // Unknown segment - return success for HLE
+                log::debug!("Unknown segment 0x{segment:02X} in D2F6 descriptor");
+                self.cpu.set_a(0);
+            }
+        }
+
+        SyscallResult::handled()
     }
 
     /// Run one frame (~16.67ms at 60fps)
@@ -1097,10 +1180,14 @@ impl Emulator {
         // Check for BRK instruction (game exit)
         let opcode = self.cpu.memory().read(pc);
         if opcode == 0x00 {
+            // Log the return address on stack for debugging
+            let sp = self.cpu.sp();
+            let ret_lo = self.cpu.memory().read(0x100 | (sp.wrapping_add(1) as u16));
+            let ret_hi = self.cpu.memory().read(0x100 | (sp.wrapping_add(2) as u16));
+            let ret_addr = ret_lo as u16 | (ret_hi as u16) << 8;
             log::info!(
-                "BRK at 0x{:04X} SP=0x{:02X}, game exiting",
-                pc,
-                self.cpu.sp()
+                "BRK at 0x{:04X} SP=0x{:02X} ret=0x{:04X}, game exiting",
+                pc, sp, ret_addr
             );
             self.running = false;
             return 1;
@@ -1119,13 +1206,15 @@ impl Emulator {
                 );
             }
 
-            // Check if target is in OS/system area (0xD000-0xFFFF)
-            // or if it's a known syscall address
-            // Intercept calls to OS area (0xD000+) or registered syscalls
-            let hle_mode = self.cpu.memory().rom_e.is_none();
-            // D2F6 is now handled as a generic syscall dispatcher
-            // No need for special begin_hle_far_call handling
-            if hle_mode && (target >= 0xD000 || self.syscalls.is_syscall(target)) {
+            // Log D2F6 calls for debugging
+            if target == 0xD2F6 {
+                let sp28 = self.cpu.memory().read16(0x28);
+                log::info!("D2F6: [0x28]=0x{:04X} A=0x{:02X}", sp28, self.cpu.a());
+            }
+
+            // In HLE mode, only intercept syscalls in the SyscallTable.
+            // Let D2F6 and other OS functions execute from OS ROM.
+            if self.hle_syscalls && self.syscalls.is_syscall(target) {
                 let result = self.handle_syscall(target);
 
                 if result.handled {
@@ -1133,10 +1222,6 @@ impl Emulator {
                     if let Some(val) = result.return_value {
                         self.cpu.set_a(val);
                     }
-                    return 3;
-                } else {
-                    // Unknown OS function - skip and return
-                    self.cpu.set_pc(pc + 3);
                     return 3;
                 }
             }
@@ -1152,443 +1237,6 @@ impl Emulator {
         cycles
     }
 
-    fn begin_hle_far_call(&mut self, caller: u16) -> bool {
-        let descriptor = self.cpu.memory().read16(0x26);
-        let Some((target, segment)) = self.hle_descriptor(descriptor) else {
-            log::warn!("Unknown HLE far-call descriptor 0x{descriptor:04X}");
-            return false;
-        };
-
-        // Segments below E0 address OS ROM groups and require semantic handlers.
-        if segment < 0xE0 {
-            return self.handle_rom_far_call(target, segment, caller);
-        }
-
-        let banks = std::array::from_fn(|index| self.cpu.memory().bank_switch.banks[5 + index]);
-        let data_base = u32::from(self.cpu.memory().read(0x2029))
-            | (u32::from(self.cpu.memory().read(0x202A)) << 8);
-        let base = data_base + u32::from(segment - 0xE0) * 4;
-        for index in 0..4 {
-            self.cpu
-                .memory_mut()
-                .bank_switch
-                .set(5 + index, base + u32::from(index));
-        }
-
-        let sp = self.cpu.sp();
-        let trampoline = HLE_FAR_RETURN.wrapping_sub(1);
-        self.cpu.memory_mut().ram[0x100 | sp as usize] = (trampoline >> 8) as u8;
-        self.cpu.memory_mut().ram[0x100 | sp.wrapping_sub(1) as usize] = trampoline as u8;
-        self.cpu.set_sp(sp.wrapping_sub(2));
-        self.hle_far_calls.push(HleFarCall {
-            return_pc: caller.wrapping_add(3),
-            banks,
-        });
-        self.cpu.set_pc(target);
-        true
-    }
-
-    /// Handle ROM far-call by implementing semantic equivalents
-    fn handle_rom_far_call(&mut self, target: u16, segment: u8, caller: u16) -> bool {
-        // ROM function implementations
-        match (segment, target) {
-            // Segment 0x04: Utility/Helper functions
-            (0x04, _) => self.handle_segment_04(target, caller),
-            // Segment 0x06: String/Math functions
-            (0x06, _) => self.handle_segment_06(target, caller),
-            // Segment 0x07: LCD/Graphics functions
-            (0x07, _) => self.handle_segment_07(target, caller),
-            // Segment 0x08: File/System functions
-            (0x08, _) => self.handle_segment_08(target, caller),
-            // Segment 0x0D: Initialization functions
-            (0x0D, _) => self.handle_segment_0D(target, caller),
-            _ => {
-                log::debug!(
-                    "Unknown ROM far-call segment=0x{segment:02X} target=0x{target:04X}, skipping"
-                );
-                false
-            }
-        }
-    }
-
-    /// Handle Segment 0x04: Utility/Helper functions
-    fn handle_segment_04(&mut self, target: u16, caller: u16) -> bool {
-        match target {
-            // Complex utility function - just return success for HLE
-            0x5000 => {
-                // This is a complex function that deals with stack manipulation
-                // For HLE, just return with A=0
-                self.cpu.set_a(0);
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            _ => {
-                log::debug!("Unknown segment 0x04 function at 0x{target:04X}");
-                // Return success for unknown functions
-                self.cpu.set_a(0);
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-        }
-    }
-
-    /// Handle Segment 0x0D: Initialization functions
-    fn handle_segment_0D(&mut self, target: u16, caller: u16) -> bool {
-        match target {
-            // Init function - initialize memory areas
-            0x6911 => {
-                // Clear some memory areas
-                self.cpu.memory_mut().ram[0x216A] = 0;
-                for i in 0..4 {
-                    let offset = i * 0x0C;
-                    self.cpu.memory_mut().ram[0x2122 + offset] = 0;
-                }
-                self.cpu.set_a(0);
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            _ => {
-                log::debug!("Unknown segment 0x0D function at 0x{target:04X}");
-                // Return success for unknown functions
-                self.cpu.set_a(0);
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-        }
-    }
-
-    /// Handle Segment 0x06: String/Math functions
-    fn handle_segment_06(&mut self, target: u16, caller: u16) -> bool {
-        match target {
-            // strlen: X/Y = string address, returns length in A
-            0x624D => {
-                let addr = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
-                let mut len = 0u8;
-                loop {
-                    if self.cpu.memory().read(addr + len as u16) == 0 {
-                        break;
-                    }
-                    len = len.wrapping_add(1);
-                    if len == 0 {
-                        break;
-                    }
-                }
-                self.cpu.set_a(len);
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            // strcpy: X/Y = dst, [0x20:0x21] = src
-            0x6280 => {
-                let dst = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
-                let src = self.cpu.memory().read16(0x20);
-                let mut i = 0u16;
-                loop {
-                    let byte = self.cpu.memory().read(src + i);
-                    self.cpu.memory_mut().write(dst + i, byte);
-                    if byte == 0 {
-                        break;
-                    }
-                    i = i.wrapping_add(1);
-                }
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            // strcmp: X/Y = str1, [0x20:0x21] = str2, returns result in A
-            0x62B0 => {
-                let str1 = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
-                let str2 = self.cpu.memory().read16(0x20);
-                let mut i = 0u16;
-                loop {
-                    let c1 = self.cpu.memory().read(str1 + i);
-                    let c2 = self.cpu.memory().read(str2 + i);
-                    if c1 != c2 {
-                        self.cpu.set_a(if c1 < c2 { 0xFF } else { 0x01 });
-                        self.cpu.set_pc(caller.wrapping_add(3));
-                        return true;
-                    }
-                    if c1 == 0 {
-                        self.cpu.set_a(0);
-                        self.cpu.set_pc(caller.wrapping_add(3));
-                        return true;
-                    }
-                    i = i.wrapping_add(1);
-                }
-            }
-            // strcat: X/Y = dst, [0x20:0x21] = src
-            0x62E0 => {
-                let dst = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
-                let src = self.cpu.memory().read16(0x20);
-                // Find end of dst
-                let mut dst_end = 0u16;
-                loop {
-                    if self.cpu.memory().read(dst + dst_end) == 0 {
-                        break;
-                    }
-                    dst_end = dst_end.wrapping_add(1);
-                }
-                // Copy src to end of dst
-                let mut i = 0u16;
-                loop {
-                    let byte = self.cpu.memory().read(src + i);
-                    self.cpu.memory_mut().write(dst + dst_end + i, byte);
-                    if byte == 0 {
-                        break;
-                    }
-                    i = i.wrapping_add(1);
-                }
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            // memcpy: X/Y = dst, [0x20:0x21] = src, A = length
-            0x6310 => {
-                let dst = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
-                let src = self.cpu.memory().read16(0x20);
-                let len = self.cpu.a() as u16;
-                for i in 0..len {
-                    let byte = self.cpu.memory().read(src + i);
-                    self.cpu.memory_mut().write(dst + i, byte);
-                }
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            // memset: X/Y = dst, A = value, [0x20] = length
-            0x6340 => {
-                let dst = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
-                let value = self.cpu.a();
-                let len = self.cpu.memory().read(0x20) as u16;
-                for i in 0..len {
-                    self.cpu.memory_mut().write(dst + i, value);
-                }
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            _ => {
-                log::debug!("Unknown segment 0x06 function at 0x{target:04X}");
-                false
-            }
-        }
-    }
-
-    /// Handle Segment 0x07: LCD/Graphics functions
-    fn handle_segment_07(&mut self, target: u16, caller: u16) -> bool {
-        match target {
-            // lcd_draw_char: Draw character at position
-            // A = character, X = column, Y = row
-            0x7770 => {
-                let ch = self.cpu.a();
-                let col = self.cpu.x();
-                let row = self.cpu.y();
-
-                // Calculate framebuffer address
-                let fb_addr = (row as usize * 20) + (col as usize);
-
-                // Get font bitmap
-                let font_bitmap = crate::font_data::get_font_bitmap(ch);
-
-                // Write font data to LCD framebuffer
-                for font_row in 0..8 {
-                    let offset = fb_addr + font_row * 160 / 8;
-                    if offset < 0x0C00 {
-                        self.cpu.memory_mut().ram[0x0400 + offset] = font_bitmap[font_row];
-                    }
-                }
-
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            // lcd_draw_string: Draw string at position
-            // X/Y = string address, [0x20] = column, [0x21] = row
-            0x77A0 => {
-                let str_addr = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
-                let col = self.cpu.memory().read(0x20);
-                let row = self.cpu.memory().read(0x21);
-
-                let mut offset = 0u16;
-                loop {
-                    let ch = self.cpu.memory().read(str_addr + offset);
-                    if ch == 0 {
-                        break;
-                    }
-
-                    // Calculate framebuffer address
-                    let fb_addr = (row as usize * 20) + ((col as usize + offset as usize) % 20);
-
-                    // Get font bitmap
-                    let font_bitmap = crate::font_data::get_font_bitmap(ch);
-
-                    // Write font data to LCD framebuffer
-                    for font_row in 0..8 {
-                        let fb_offset = fb_addr + font_row * 160 / 8;
-                        if fb_offset < 0x0C00 {
-                            self.cpu.memory_mut().ram[0x0400 + fb_offset] =
-                                font_bitmap[font_row];
-                        }
-                    }
-
-                    offset = offset.wrapping_add(1);
-                }
-
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            // rtc_get_sec: Get RTC seconds (masked with 0x3F)
-            0x759F => {
-                let sec = self.cpu.memory().ram[0x234] & 0x3F;
-                self.cpu.set_a(sec);
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            // volume_set: Set volume/mute
-            // A = 0 for mute, non-zero for unmute
-            0x7716 => {
-                let value = self.cpu.a();
-                if value == 0 {
-                    self.cpu.memory_mut().ram[0x201B] &= 0xFB; // Clear bit2
-                } else {
-                    self.cpu.memory_mut().ram[0x201B] |= 0x04; // Set bit2
-                }
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            // volume_get: Get volume/mute status
-            // Returns1 in A if unmuted,0 if muted
-            0x772E => {
-                let muted = self.cpu.memory().ram[0x201B] & 0x04;
-                self.cpu.set_a(if muted != 0 { 1 } else { 0 });
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            // lcd_enable: LCD display enable/configure
-            0x7CE5 => {
-                // Check if LCD is active
-                let lcd_active = self.cpu.memory().ram[0x2059];
-                if lcd_active == 0 {
-                    self.cpu.set_a(0);
-                    self.cpu.set_pc(caller.wrapping_add(3));
-                    return true;
-                }
-
-                // Configure LCD controller registers
-                self.cpu.memory_mut().ram[0x021A] = 0xDF;
-                self.cpu.memory_mut().ram[0x0219] = 0x20;
-                self.cpu.memory_mut().ram[0x0218] = 0xFF;
-                self.cpu.memory_mut().ram[0x021D] = 0xEB;
-                self.cpu.memory_mut().ram[0x021C] = 0x14;
-                self.cpu.memory_mut().ram[0x021B] |= 0x3F;
-                self.cpu.memory_mut().ram[0x021B] &= 0xDF;
-                self.cpu.memory_mut().ram[0x021B] &= 0xF7;
-                self.cpu.memory_mut().ram[0x021B] |= 0x01;
-                self.cpu.memory_mut().ram[0x021B] |= 0x1F;
-                self.cpu.memory_mut().ram[0x021B] |= 0x02;
-
-                self.cpu.set_a(0);
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            _ => {
-                log::debug!("Unknown segment 0x07 function at 0x{target:04X}");
-                false
-            }
-        }
-    }
-
-    /// Handle Segment 0x08: File/System functions
-    fn handle_segment_08(&mut self, target: u16, caller: u16) -> bool {
-        match target {
-            // file_open: Open file
-            // X/Y = filename address, A = mode (0=read, 1=write)
-            0x5000 => {
-                let _filename_addr = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
-                let _mode = self.cpu.a();
-
-                // For HLE, we don't support file operations
-                // Return error (0xFF)
-                self.cpu.set_a(0xFF);
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            // file_read: Read from file
-            // A = file handle, X/Y = buffer address, [0x20:0x21] = count
-            0x5093 => {
-                let _handle = self.cpu.a();
-                let _buffer_addr = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
-                let _count = self.cpu.memory().read16(0x20);
-
-                // Return 0 bytes read
-                self.cpu.set_a(0);
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            // file_write: Write to file
-            // A = file handle, X/Y = buffer address, [0x20:0x21] = count
-            0x5D45 => {
-                let _handle = self.cpu.a();
-                let _buffer_addr = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
-                let _count = self.cpu.memory().read16(0x20);
-
-                // Return 0 bytes written
-                self.cpu.set_a(0);
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            // file_close: Close file
-            // A = file handle
-            0x5FF3 => {
-                let _handle = self.cpu.a();
-
-                // Return success
-                self.cpu.set_a(0);
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            // file_delete: Delete file
-            // X/Y = filename address
-            0x6111 => {
-                let _filename_addr = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
-
-                // Return error
-                self.cpu.set_a(0xFF);
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            // file_seek: Seek in file
-            // A = file handle, X/Y = offset, [0x20] = whence
-            0x7D92 => {
-                let _handle = self.cpu.a();
-                let _offset = self.cpu.x() as u16 | (self.cpu.y() as u16) << 8;
-                let _whence = self.cpu.memory().read(0x20);
-
-                // Return error
-                self.cpu.set_a(0xFF);
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            // file_tell: Get file position
-            // A = file handle
-            0x7093 => {
-                let _handle = self.cpu.a();
-
-                // Return 0
-                self.cpu.set_a(0);
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            // file_eof: Check end of file
-            // A = file handle
-            0x6A79 => {
-                let _handle = self.cpu.a();
-
-                // Return EOF
-                self.cpu.set_a(1);
-                self.cpu.set_pc(caller.wrapping_add(3));
-                true
-            }
-            _ => {
-                log::debug!("Unknown segment 0x08 function at 0x{target:04X}");
-                false
-            }
-        }
-    }
 
     fn hle_descriptor(&self, address: u16) -> Option<(u16, u8)> {
         const MODEL_4988: &[(u16, u16, u8)] = &[
