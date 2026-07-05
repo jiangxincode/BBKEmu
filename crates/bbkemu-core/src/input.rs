@@ -72,13 +72,13 @@ impl BbkKey {
     /// Convert from raw key code
     pub fn from_code(code: u8) -> Option<Self> {
         match code {
-            0x00..=0x07 => Some(unsafe { std::mem::transmute(code) }),
-            0x08..=0x0F => Some(unsafe { std::mem::transmute(code) }),
-            0x10..=0x17 => Some(unsafe { std::mem::transmute(code) }),
-            0x18..=0x1F => Some(unsafe { std::mem::transmute(code) }),
-            0x20..=0x27 => Some(unsafe { std::mem::transmute(code) }),
-            0x28..=0x2F => Some(unsafe { std::mem::transmute(code) }),
-            0x30..=0x3B => Some(unsafe { std::mem::transmute(code) }),
+            0x00..=0x07 => Some(unsafe { std::mem::transmute::<u8, BbkKey>(code) }),
+            0x08..=0x0F => Some(unsafe { std::mem::transmute::<u8, BbkKey>(code) }),
+            0x10..=0x17 => Some(unsafe { std::mem::transmute::<u8, BbkKey>(code) }),
+            0x18..=0x1F => Some(unsafe { std::mem::transmute::<u8, BbkKey>(code) }),
+            0x20..=0x27 => Some(unsafe { std::mem::transmute::<u8, BbkKey>(code) }),
+            0x28..=0x2F => Some(unsafe { std::mem::transmute::<u8, BbkKey>(code) }),
+            0x30..=0x3B => Some(unsafe { std::mem::transmute::<u8, BbkKey>(code) }),
             _ => None,
         }
     }
@@ -164,6 +164,12 @@ pub struct Input {
     last_press_time: u64,
     /// Last key pressed
     last_key: u8,
+}
+
+impl Default for Input {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Input {

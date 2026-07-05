@@ -3,10 +3,10 @@
 use mos6502::memory::Bus;
 
 /// Physical memory map constants
-pub const RAM_SIZE: usize = 0x8000;         // 32 KiB
-pub const FLASH_SIZE: usize = 0x200000;     // 2 MiB
-pub const ROM8_SIZE: usize = 0x200000;      // 2 MiB (font ROM)
-pub const ROME_SIZE: usize = 0x200000;      // 2 MiB (OS ROM)
+pub const RAM_SIZE: usize = 0x8000; // 32 KiB
+pub const FLASH_SIZE: usize = 0x200000; // 2 MiB
+pub const ROM8_SIZE: usize = 0x200000; // 2 MiB (font ROM)
+pub const ROME_SIZE: usize = 0x200000; // 2 MiB (OS ROM)
 
 /// Hardware register addresses
 pub mod registers {
@@ -73,6 +73,12 @@ pub struct BankSwitch {
     pub banks: [u32; 16],
     /// Currently selected bank register
     selected: u8,
+}
+
+impl Default for BankSwitch {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BankSwitch {
@@ -157,6 +163,12 @@ pub struct Memory {
     timer_counters: [u32; 5],
 }
 
+impl Default for Memory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Memory {
     pub fn new() -> Self {
         Self {
@@ -204,10 +216,9 @@ impl Memory {
             0x0000..=0x00FF => self.read_page0(addr),
             // Pages 1-15: direct RAM (0x0100-0x0FFF)
             0x0100..=0x02FF | 0x0400..=0x0FFF => self.ram[addr as usize],
-            0x0300..=0x03FF => self
-                .rom_e
-                .as_ref()
-                .map_or(self.ram[addr as usize], |rom| rom[0x1FFF00 + addr as usize - 0x0300]),
+            0x0300..=0x03FF => self.rom_e.as_ref().map_or(self.ram[addr as usize], |rom| {
+                rom[0x1FFF00 + addr as usize - 0x0300]
+            }),
             // Pages 16-255: bank-switched (0x1000-0xFFFF)
             _ => {
                 let paddr = self.bank_switch.translate(addr);
@@ -362,17 +373,17 @@ impl Memory {
         if addr < 0x8000 {
             // RAM
             self.ram[addr as usize]
-        } else if addr >= 0x200000 && addr < 0x400000 {
+        } else if (0x200000..0x400000).contains(&addr) {
             // Flash
             self.read_flash(addr - 0x200000)
-        } else if addr >= 0x800000 && addr < 0xA00000 {
+        } else if (0x800000..0xA00000).contains(&addr) {
             // Font ROM (8.BIN)
             if let Some(ref rom) = self.rom_8 {
                 rom[(addr - 0x800000) as usize]
             } else {
                 0x00
             }
-        } else if addr >= 0xE00000 && addr < 0x1000000 {
+        } else if (0xE00000..0x1000000).contains(&addr) {
             // OS ROM (E.BIN)
             if let Some(ref rom) = self.rom_e {
                 rom[(addr - 0xE00000) as usize]
@@ -389,7 +400,7 @@ impl Memory {
         if addr < 0x8000 {
             // RAM
             self.ram[addr as usize] = val;
-        } else if addr >= 0x200000 && addr < 0x400000 {
+        } else if (0x200000..0x400000).contains(&addr) {
             // Flash
             self.write_flash(addr - 0x200000, val);
         }
@@ -496,11 +507,9 @@ impl Memory {
             5 => {
                 // 6th Bus Write Cycle
                 match val {
-                    0x10 => {
+                    0x10 if addr == 0x5555 => {
                         // Chip-Erase
-                        if addr == 0x5555 {
-                            self.flash.fill(0xFF);
-                        }
+                        self.flash.fill(0xFF);
                     }
                     0x30 => {
                         // Sector-Erase
@@ -535,8 +544,7 @@ impl Memory {
     /// Advance hardware timers by 400-cycle ticks.
     pub fn update_timers(&mut self, ticks: u32) {
         // Update main timer counter
-        self.ram[registers::MTCT as usize] =
-            self.ram[registers::MTCT as usize].wrapping_add(1);
+        self.ram[registers::MTCT as usize] = self.ram[registers::MTCT as usize].wrapping_add(1);
 
         // Check for timer interrupts
         let stcon = self.ram[registers::STCON as usize];

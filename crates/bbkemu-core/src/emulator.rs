@@ -65,10 +65,18 @@ impl Emulator {
     }
 
     /// Create emulator with default model (A4980)
-    pub fn default() -> Self {
+    pub fn new_default() -> Self {
         Self::new(&MODEL_4980)
     }
+}
 
+impl Default for Emulator {
+    fn default() -> Self {
+        Self::new(&MODEL_4980)
+    }
+}
+
+impl Emulator {
     /// Load a GAM file
     pub fn load_gam(&mut self, data: &[u8]) -> Result<()> {
         let gam = GamFile::parse(data)?;
@@ -223,7 +231,6 @@ impl Emulator {
         log::warn!("OS initialization timed out");
     }
 
-
     /// Run one frame (~16.67ms at 60fps)
     pub fn run_frame(&mut self) {
         // BBK runs at ~4MHz, 60fps = ~66666 cycles per frame
@@ -275,7 +282,9 @@ impl Emulator {
             let ret_addr = ret_lo as u16 | (ret_hi as u16) << 8;
             log::info!(
                 "BRK at 0x{:04X} SP=0x{:02X} ret=0x{:04X}, game exiting",
-                pc, sp, ret_addr
+                pc,
+                sp,
+                ret_addr
             );
             self.running = false;
             return 1;
@@ -285,7 +294,6 @@ impl Emulator {
         if opcode == 0x20 {
             let target = self.cpu.memory().read16(pc + 1);
             if target >= 0xD000 {
-                let ram = &self.cpu.memory().ram;
                 log::info!(
                     "OS call caller=0x{pc:04X} target=0x{target:04X} A={:02X} X={:02X} Y={:02X}",
                     self.cpu.a(),
@@ -357,7 +365,6 @@ impl Emulator {
         // Check for counter interrupt
         if (isr & 0x02) != 0 && (ier & 0x02) != 0 {
             self.trigger_interrupt(0x12); // CT
-            return;
         }
     }
 

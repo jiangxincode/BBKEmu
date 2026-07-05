@@ -2,17 +2,17 @@
 //!
 //! This crate implements a BBK A-series electronic dictionary game emulator.
 
-pub mod cpu;
-pub mod memory;
-pub mod gam;
-pub mod emulator;
-pub mod lcd;
-pub mod input;
 pub mod audio;
-pub mod save;
+pub mod cpu;
 pub mod debug;
-pub mod model;
+pub mod emulator;
 pub mod font_data;
+pub mod gam;
+pub mod input;
+pub mod lcd;
+pub mod memory;
+pub mod model;
+pub mod save;
 
 pub use emulator::Emulator;
 pub use model::BbkModel;
