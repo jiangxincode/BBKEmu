@@ -2,8 +2,8 @@
 
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_void};
-use std::path::PathBuf;
 use std::panic;
+use std::path::PathBuf;
 
 use bbkemu_core::{input::BbkKey, model, BbkModel, Emulator};
 
@@ -22,8 +22,10 @@ const RETROK_LEFT: u32 = 0x250;
 const RETROK_UP: u32 = 0x251;
 const RETROK_RIGHT: u32 = 0x252;
 const RETROK_DOWN: u32 = 0x253;
-const RETROK_a: u32 = 97;
-const RETROK_z: u32 = 122;
+#[allow(dead_code)]
+const RETROK_A: u32 = 97;
+#[allow(dead_code)]
+const RETROK_Z: u32 = 122;
 const RETROK_BACKSPACE: u32 = 8;
 const RETROK_DELETE: u32 = 127;
 const RETROK_PAGEUP: u32 = 0x254;
@@ -121,6 +123,7 @@ static mut INPUT_POLL_CB: RetroInputPollT = None;
 static mut INPUT_STATE_CB: RetroInputStateT = None;
 
 /// Keyboard callback
+#[allow(dead_code)]
 static mut KEYBOARD_CB: RetroKeyboardCallbackT = None;
 
 /// Keyboard callback struct for RetroArch
@@ -180,10 +183,8 @@ pub extern "C" fn retro_init() {
         eprintln!("BBKEmu panic: {}", info);
     }));
 
-    let result = panic::catch_unwind(|| {
-        unsafe {
-            EMULATOR = Some(Emulator::new(&model::MODEL_4980));
-        }
+    let result = panic::catch_unwind(|| unsafe {
+        EMULATOR = Some(Emulator::new(&model::MODEL_4980));
     });
 
     if result.is_err() {
@@ -208,7 +209,10 @@ pub extern "C" fn retro_set_environment(cb: RetroEnvironmentT) {
             callback: Some(keyboard_callback),
         };
         if let Some(env_cb) = cb {
-            env_cb(RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, &kbd as *const _ as *mut c_void);
+            env_cb(
+                RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK,
+                &kbd as *const _ as *mut c_void,
+            );
         }
     }
 }
@@ -266,7 +270,12 @@ fn map_keyboard_to_bbk_key(keycode: u32) -> Option<BbkKey> {
 }
 
 /// Keyboard callback function
-unsafe extern "C" fn keyboard_callback(down: bool, keycode: u32, _character: u32, _key_modifiers: u16) {
+unsafe extern "C" fn keyboard_callback(
+    down: bool,
+    keycode: u32,
+    _character: u32,
+    _key_modifiers: u16,
+) {
     if !down {
         return;
     }
@@ -338,23 +347,104 @@ pub unsafe extern "C" fn retro_load_game(info: *const RetroGameInfo) -> bool {
 
             // Set input descriptors
             let inputs = [
-                RetroInputDescriptor { port: 0, device: RETRO_DEVICE_JOYPAD, index: 0, id: RETRO_DEVICE_ID_JOYPAD_B, description: c"EXIT".as_ptr() },
-                RetroInputDescriptor { port: 0, device: RETRO_DEVICE_JOYPAD, index: 0, id: RETRO_DEVICE_ID_JOYPAD_Y, description: c"HELP".as_ptr() },
-                RetroInputDescriptor { port: 0, device: RETRO_DEVICE_JOYPAD, index: 0, id: RETRO_DEVICE_ID_JOYPAD_SELECT, description: c"INSERT".as_ptr() },
-                RetroInputDescriptor { port: 0, device: RETRO_DEVICE_JOYPAD, index: 0, id: RETRO_DEVICE_ID_JOYPAD_START, description: c"SEARCH".as_ptr() },
-                RetroInputDescriptor { port: 0, device: RETRO_DEVICE_JOYPAD, index: 0, id: RETRO_DEVICE_ID_JOYPAD_UP, description: c"UP".as_ptr() },
-                RetroInputDescriptor { port: 0, device: RETRO_DEVICE_JOYPAD, index: 0, id: RETRO_DEVICE_ID_JOYPAD_DOWN, description: c"DOWN".as_ptr() },
-                RetroInputDescriptor { port: 0, device: RETRO_DEVICE_JOYPAD, index: 0, id: RETRO_DEVICE_ID_JOYPAD_LEFT, description: c"LEFT".as_ptr() },
-                RetroInputDescriptor { port: 0, device: RETRO_DEVICE_JOYPAD, index: 0, id: RETRO_DEVICE_ID_JOYPAD_RIGHT, description: c"RIGHT".as_ptr() },
-                RetroInputDescriptor { port: 0, device: RETRO_DEVICE_JOYPAD, index: 0, id: RETRO_DEVICE_ID_JOYPAD_A, description: c"ENTER".as_ptr() },
-                RetroInputDescriptor { port: 0, device: RETRO_DEVICE_JOYPAD, index: 0, id: RETRO_DEVICE_ID_JOYPAD_X, description: c"R".as_ptr() },
-                RetroInputDescriptor { port: 0, device: RETRO_DEVICE_JOYPAD, index: 0, id: RETRO_DEVICE_ID_JOYPAD_L, description: c"PGUP".as_ptr() },
-                RetroInputDescriptor { port: 0, device: RETRO_DEVICE_JOYPAD, index: 0, id: RETRO_DEVICE_ID_JOYPAD_R, description: c"PGDN".as_ptr() },
-                RetroInputDescriptor { port: 0, device: 0, index: 0, id: 0, description: std::ptr::null() },
+                RetroInputDescriptor {
+                    port: 0,
+                    device: RETRO_DEVICE_JOYPAD,
+                    index: 0,
+                    id: RETRO_DEVICE_ID_JOYPAD_B,
+                    description: c"EXIT".as_ptr(),
+                },
+                RetroInputDescriptor {
+                    port: 0,
+                    device: RETRO_DEVICE_JOYPAD,
+                    index: 0,
+                    id: RETRO_DEVICE_ID_JOYPAD_Y,
+                    description: c"HELP".as_ptr(),
+                },
+                RetroInputDescriptor {
+                    port: 0,
+                    device: RETRO_DEVICE_JOYPAD,
+                    index: 0,
+                    id: RETRO_DEVICE_ID_JOYPAD_SELECT,
+                    description: c"INSERT".as_ptr(),
+                },
+                RetroInputDescriptor {
+                    port: 0,
+                    device: RETRO_DEVICE_JOYPAD,
+                    index: 0,
+                    id: RETRO_DEVICE_ID_JOYPAD_START,
+                    description: c"SEARCH".as_ptr(),
+                },
+                RetroInputDescriptor {
+                    port: 0,
+                    device: RETRO_DEVICE_JOYPAD,
+                    index: 0,
+                    id: RETRO_DEVICE_ID_JOYPAD_UP,
+                    description: c"UP".as_ptr(),
+                },
+                RetroInputDescriptor {
+                    port: 0,
+                    device: RETRO_DEVICE_JOYPAD,
+                    index: 0,
+                    id: RETRO_DEVICE_ID_JOYPAD_DOWN,
+                    description: c"DOWN".as_ptr(),
+                },
+                RetroInputDescriptor {
+                    port: 0,
+                    device: RETRO_DEVICE_JOYPAD,
+                    index: 0,
+                    id: RETRO_DEVICE_ID_JOYPAD_LEFT,
+                    description: c"LEFT".as_ptr(),
+                },
+                RetroInputDescriptor {
+                    port: 0,
+                    device: RETRO_DEVICE_JOYPAD,
+                    index: 0,
+                    id: RETRO_DEVICE_ID_JOYPAD_RIGHT,
+                    description: c"RIGHT".as_ptr(),
+                },
+                RetroInputDescriptor {
+                    port: 0,
+                    device: RETRO_DEVICE_JOYPAD,
+                    index: 0,
+                    id: RETRO_DEVICE_ID_JOYPAD_A,
+                    description: c"ENTER".as_ptr(),
+                },
+                RetroInputDescriptor {
+                    port: 0,
+                    device: RETRO_DEVICE_JOYPAD,
+                    index: 0,
+                    id: RETRO_DEVICE_ID_JOYPAD_X,
+                    description: c"R".as_ptr(),
+                },
+                RetroInputDescriptor {
+                    port: 0,
+                    device: RETRO_DEVICE_JOYPAD,
+                    index: 0,
+                    id: RETRO_DEVICE_ID_JOYPAD_L,
+                    description: c"PGUP".as_ptr(),
+                },
+                RetroInputDescriptor {
+                    port: 0,
+                    device: RETRO_DEVICE_JOYPAD,
+                    index: 0,
+                    id: RETRO_DEVICE_ID_JOYPAD_R,
+                    description: c"PGDN".as_ptr(),
+                },
+                RetroInputDescriptor {
+                    port: 0,
+                    device: 0,
+                    index: 0,
+                    id: 0,
+                    description: std::ptr::null(),
+                },
             ];
 
             if let Some(env_cb) = ENVIRONMENT_CB {
-                env_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, inputs.as_ptr() as *mut c_void);
+                env_cb(
+                    RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS,
+                    inputs.as_ptr() as *mut c_void,
+                );
             }
 
             emu.load_gam(game_data).is_ok()
@@ -377,22 +467,22 @@ pub extern "C" fn retro_unload_game() {}
 
 /// Joypad button to BBK key mapping
 const JOYK: [BbkKey; 16] = [
-    BbkKey::Exit,      // RETRO_DEVICE_ID_JOYPAD_B (0) -> EXIT
-    BbkKey::Help,      // RETRO_DEVICE_ID_JOYPAD_Y (1) -> HELP
-    BbkKey::Insert,    // RETRO_DEVICE_ID_JOYPAD_SELECT (2) -> INSERT
-    BbkKey::Search,    // RETRO_DEVICE_ID_JOYPAD_START (3) -> SEARCH
-    BbkKey::Up,        // RETRO_DEVICE_ID_JOYPAD_UP (4) -> UP
-    BbkKey::Down,      // RETRO_DEVICE_ID_JOYPAD_DOWN (5) -> DOWN
-    BbkKey::Left,      // RETRO_DEVICE_ID_JOYPAD_LEFT (6) -> LEFT
-    BbkKey::Right,     // RETRO_DEVICE_ID_JOYPAD_RIGHT (7) -> RIGHT
-    BbkKey::Enter,     // RETRO_DEVICE_ID_JOYPAD_A (8) -> ENTER
-    BbkKey::R,         // RETRO_DEVICE_ID_JOYPAD_X (9) -> R
-    BbkKey::PgUp,      // RETRO_DEVICE_ID_JOYPAD_L (10) -> PGUP
-    BbkKey::PgDn,      // RETRO_DEVICE_ID_JOYPAD_R (11) -> PGDN
-    BbkKey::Modify,    // RETRO_DEVICE_ID_JOYPAD_L2 (12) -> MODIFY
-    BbkKey::Del,       // RETRO_DEVICE_ID_JOYPAD_R2 (13) -> DEL
-    BbkKey::A,         // RETRO_DEVICE_ID_JOYPAD_L3 (14) -> A
-    BbkKey::Z,         // RETRO_DEVICE_ID_JOYPAD_R3 (15) -> Z
+    BbkKey::Exit,   // RETRO_DEVICE_ID_JOYPAD_B (0) -> EXIT
+    BbkKey::Help,   // RETRO_DEVICE_ID_JOYPAD_Y (1) -> HELP
+    BbkKey::Insert, // RETRO_DEVICE_ID_JOYPAD_SELECT (2) -> INSERT
+    BbkKey::Search, // RETRO_DEVICE_ID_JOYPAD_START (3) -> SEARCH
+    BbkKey::Up,     // RETRO_DEVICE_ID_JOYPAD_UP (4) -> UP
+    BbkKey::Down,   // RETRO_DEVICE_ID_JOYPAD_DOWN (5) -> DOWN
+    BbkKey::Left,   // RETRO_DEVICE_ID_JOYPAD_LEFT (6) -> LEFT
+    BbkKey::Right,  // RETRO_DEVICE_ID_JOYPAD_RIGHT (7) -> RIGHT
+    BbkKey::Enter,  // RETRO_DEVICE_ID_JOYPAD_A (8) -> ENTER
+    BbkKey::R,      // RETRO_DEVICE_ID_JOYPAD_X (9) -> R
+    BbkKey::PgUp,   // RETRO_DEVICE_ID_JOYPAD_L (10) -> PGUP
+    BbkKey::PgDn,   // RETRO_DEVICE_ID_JOYPAD_R (11) -> PGDN
+    BbkKey::Modify, // RETRO_DEVICE_ID_JOYPAD_L2 (12) -> MODIFY
+    BbkKey::Del,    // RETRO_DEVICE_ID_JOYPAD_R2 (13) -> DEL
+    BbkKey::A,      // RETRO_DEVICE_ID_JOYPAD_L3 (14) -> A
+    BbkKey::Z,      // RETRO_DEVICE_ID_JOYPAD_R3 (15) -> Z
 ];
 
 /// Static state for joypad input handling
@@ -450,6 +540,7 @@ pub extern "C" fn retro_run() {
 
                 // 5. Send video frame to frontend
                 if let Some(video_cb) = VIDEO_CB {
+                    #[allow(static_mut_refs)]
                     video_cb(
                         FRAMEBUFFER.as_ptr() as *const c_void,
                         159,
