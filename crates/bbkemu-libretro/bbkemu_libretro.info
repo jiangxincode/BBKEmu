@@ -27,7 +27,7 @@ load_subsystem = "false"
 hw_render = "false"
 needs_fullpath = "false"
 disk_control = "false"
-is_experimental = "true"
+is_experimental = "false"
 
 # Firmware Information
 firmware0_desc = "8.BIN (Font ROM)"

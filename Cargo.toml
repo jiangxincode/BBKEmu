@@ -5,6 +5,7 @@ members = [
     "crates/bbkemu-libretro",
     "crates/bbkemu-rom-analyzer",
 ]
+default-members = ["crates/bbkemu-libretro"]
 resolver = "2"
 
 [workspace.package]
