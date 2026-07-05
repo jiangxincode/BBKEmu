@@ -13,7 +13,7 @@ for BBK games.
 │                      BBKEmu Architecture                    │
 ├─────────────────────────────────────────────────────────────┤
 │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐     │
-│  │   bbkemu    │    │bbkemu-      │    │bbkemu-hle-  │     │
+│  │   bbkemu    │    │bbkemu-      │    │bbkemu-rom-  │     │
 │  │  (frontend) │    │libretro     │    │analyzer     │     │
 │  └──────┬──────┘    └──────┬──────┘    └──────┬──────┘     │
 │         │                  │                  │             │
@@ -75,15 +75,15 @@ libretro core for RetroArch integration.
 |------|-------------|
 | lib.rs | libretro API implementation |
 
-### bbkemu-hle-analyzer (Binary)
+### bbkemu-rom-analyzer (Binary)
 
-Tool for analyzing GAM files to identify system call patterns.
+Tool for analyzing BBK OS ROM files for emulation development and debugging.
 
 **Files:**
 
 | File | Description |
 |------|-------------|
-| main.rs | GAM file analyzer |
+| main.rs | OS ROM analyzer |
 
 ## Key Types
 
@@ -102,7 +102,7 @@ pub struct Emulator {
     running: bool,
     frame_count: u64,
     timer_cycle_remainder: u32,
-    hle_far_calls: Vec<HleFarCall>,
+    far_calls: Vec<FarCall>,  // Far call return points
 }
 ```
 
