@@ -3,6 +3,7 @@
 use anyhow::Result;
 
 use crate::audio::Audio;
+use crate::cheat::CheatEngine;
 use crate::cpu::CpuWrapper;
 use crate::debug::Debugger;
 use crate::gam::GamFile;
@@ -24,6 +25,8 @@ pub struct Emulator {
     pub audio: Audio,
     /// Debugger
     pub debug: Debugger,
+    /// Cheat engine
+    pub cheat: CheatEngine,
     /// Current model
     model: &'static BbkModel,
     /// LCD display orientation
@@ -62,6 +65,7 @@ impl Emulator {
             input: Input::new(),
             audio,
             debug: Debugger::new(),
+            cheat: CheatEngine::new(),
             model,
             lcd_orientation: LcdOrientation::Portrait,
             cpu_rate: 1.0,
@@ -242,6 +246,12 @@ impl Emulator {
 
     /// Run one frame (~16.67ms at 60fps)
     pub fn run_frame(&mut self) {
+        // Apply cheats at the start of each frame
+        if self.cheat.has_active_cheats() {
+            let (ram, flash) = self.cpu.memory_mut().get_ram_and_flash();
+            self.cheat.apply_cheats(ram, flash);
+        }
+
         // BBK runs at ~4MHz, 60fps = ~66666 cycles per frame
         // Apply CPU rate multiplier
         let cycles_per_frame = (66666.0 * self.cpu_rate) as u32;

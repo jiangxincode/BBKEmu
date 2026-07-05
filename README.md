@@ -66,6 +66,7 @@ bbkemu game.gam
 | `--cpu-rate <RATE>` | CPU clock rate multiplier (0.25-8.0) | 1.0 |
 | `--timer-rate <RATE>` | Timer clock rate multiplier (0.25-8.0) | 1.0 |
 | `--key-repeat-interval <MS>` | Minimum key repeat interval in ms (0 = no limit) | 0 |
+| `--cheat <CODE>` | Cheat code (format: AAAAAAVV, can specify multiple) | none |
 
 **Keyboard shortcuts:**
 
@@ -108,6 +109,7 @@ BBKEmu can be used as a libretro core with RetroArch.
 - ✅ CPU/Timer clock rate adjustment
 - ✅ Save states (serialization/deserialization)
 - ✅ SRAM support (flash memory)
+- ✅ Cheat codes support
 
 ## Building
 

@@ -209,6 +209,11 @@ impl Memory {
         self.rom_e = Some(rom);
     }
 
+    /// Get mutable references to RAM and Flash for cheat engine
+    pub fn get_ram_and_flash(&mut self) -> (&mut [u8], &mut [u8]) {
+        (&mut self.ram, &mut self.flash)
+    }
+
     /// Read a byte from memory
     pub fn read(&self, addr: u16) -> u8 {
         match addr {

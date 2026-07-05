@@ -11,3 +11,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 bbkemu-core = { path = "../bbkemu-core" }
+log = { workspace = true }

@@ -3,6 +3,7 @@
 //! This crate implements a BBK A-series electronic dictionary game emulator.
 
 pub mod audio;
+pub mod cheat;
 pub mod cpu;
 pub mod debug;
 pub mod emulator;

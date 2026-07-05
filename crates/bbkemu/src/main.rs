@@ -75,6 +75,10 @@ struct Cli {
     /// Minimum key repeat interval in milliseconds (0 = no limit)
     #[arg(long, default_value = "0")]
     key_repeat_interval: u64,
+
+    /// Cheat codes (format: AAAAAAVV for address=value, can specify multiple)
+    #[arg(long)]
+    cheat: Vec<String>,
 }
 
 fn main() -> Result<()> {
@@ -119,6 +123,16 @@ fn main() -> Result<()> {
         emu.timer_rate(),
         emu.key_repeat_interval()
     );
+
+    // Add cheat codes
+    for cheat_code in &cli.cheat {
+        if let Some(id) = emu.cheat.add_cheat(cheat_code) {
+            log::info!("Added cheat {}: {}", id, cheat_code);
+        } else {
+            log::warn!("Invalid cheat code: {}", cheat_code);
+        }
+    }
+
     log::info!("Emulator created");
 
     // Load optional ROMs

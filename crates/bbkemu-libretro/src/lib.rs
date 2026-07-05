@@ -722,10 +722,44 @@ pub extern "C" fn retro_unserialize(data: *const c_void, size: usize) -> bool {
 pub extern "C" fn retro_reset() {}
 
 #[no_mangle]
-pub extern "C" fn retro_cheat_reset() {}
+pub extern "C" fn retro_cheat_reset() {
+    let _ = panic::catch_unwind(|| unsafe {
+        if let Some(ref mut emu) = EMULATOR {
+            emu.cheat.clear();
+        }
+    });
+}
 
+/// # Safety
+///
+/// `code` must be a valid pointer to a null-terminated C string, or null.
 #[no_mangle]
-pub extern "C" fn retro_cheat_set(_index: u32, _enabled: bool, _code: *const c_char) {}
+pub unsafe extern "C" fn retro_cheat_set(index: u32, enabled: bool, code: *const c_char) {
+    let _ = panic::catch_unwind(|| {
+        if code.is_null() {
+            return;
+        }
+
+        if let Some(ref mut emu) = EMULATOR {
+            let code_str = CStr::from_ptr(code);
+            if let Ok(code_str) = code_str.to_str() {
+                // If the code string is empty, disable the cheat at this index
+                if code_str.is_empty() {
+                    emu.cheat.set_cheat_enabled(index, false);
+                    return;
+                }
+
+                // Try to add the cheat code
+                if let Some(id) = emu.cheat.add_cheat(code_str) {
+                    emu.cheat.set_cheat_enabled(id, enabled);
+                    log::info!("Cheat {} set: {} (enabled: {})", id, code_str, enabled);
+                } else {
+                    log::warn!("Invalid cheat code: {}", code_str);
+                }
+            }
+        }
+    });
+}
 
 #[no_mangle]
 pub extern "C" fn retro_load_game_special(
