@@ -34,10 +34,6 @@ struct Cli {
     #[arg(short = 'e', long)]
     rome: Option<PathBuf>,
 
-    /// Force HLE mode without loading the OS ROM (deprecated: OS ROM is now always loaded)
-    #[arg(long, conflicts_with = "rome", hide = true)]
-    hle: bool,
-
     /// Display scale factor
     #[arg(short, long, default_value = "4", value_parser = clap::value_parser!(u32).range(1..=16))]
     scale: u32,
