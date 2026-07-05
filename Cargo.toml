@@ -3,7 +3,7 @@ members = [
     "crates/bbkemu-core",
     "crates/bbkemu",
     "crates/bbkemu-libretro",
-    "crates/bbkemu-hle-analyzer",
+    "crates/bbkemu-rom-analyzer",
 ]
 resolver = "2"
 

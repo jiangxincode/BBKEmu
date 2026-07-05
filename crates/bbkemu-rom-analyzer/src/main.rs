@@ -7,7 +7,7 @@ use capstone::prelude::*;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(about = "Analyze BBK OS ROM entry points for HLE development")]
+#[command(about = "Analyze BBK OS ROM for emulation development")]
 struct Cli {
     /// Path to E.BIN.
     rom: PathBuf,

@@ -116,13 +116,13 @@ on Windows (`libbbkemu.so` on Linux, `libbbkemu.dylib` on macOS) under
 `target/release/`. Rename it to `bbkemu_libretro.<ext>` before dropping it into
 RetroArch's `cores/` directory.
 
-### HLE Analyzer Tool
+### ROM Analyzer Tool
 
 ```bash
-cargo build -p bbkemu-hle-analyzer --release
+cargo build -p bbkemu-rom-analyzer --release
 ```
 
-This tool analyzes GAM files to identify system call patterns.
+This tool analyzes BBK OS ROM files for emulation development and debugging.
 
 ## Testing
 
@@ -157,9 +157,9 @@ crates/
 ├── bbkemu-libretro/           # libretro cdylib (-> bbkemu_libretro.{dll,so,dylib})
 │   └── src/
 │       └── lib.rs             # libretro API implementation
-└── bbkemu-hle-analyzer/       # HLE analysis tool
+└── bbkemu-rom-analyzer/       # ROM analysis tool
     └── src/
-        └── main.rs            # GAM file analyzer
+        └── main.rs            # OS ROM analyzer
 ```
 
 ## How It Works

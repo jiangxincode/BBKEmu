@@ -1,12 +1,12 @@
 [package]
-name = "bbkemu-hle-analyzer"
+name = "bbkemu-rom-analyzer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Reverse-engineering utilities for BBK HLE development"
+description = "ROM analysis and reverse-engineering utilities for BBK emulation"
 
 [[bin]]
-name = "bbkemu-hle-analyzer"
+name = "bbkemu-rom-analyzer"
 path = "src/main.rs"
 
 [dependencies]
