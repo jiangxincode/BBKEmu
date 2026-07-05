@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use bbkemu_core::emulator::Emulator;
 
 /// Number of frames to run per game before sampling the output.
-const FRAMES: u64 = 150;
+const FRAMES: u64 = 600;
 
 /// Resolve the directory that holds the BBK game assets (.gam files).
 fn game_dir() -> Option<PathBuf> {
@@ -35,18 +35,28 @@ fn game_dir() -> Option<PathBuf> {
 }
 
 /// Resolve the directory that holds the ROM files (8.BIN, E.BIN).
+/// Searches in order: BBK_ROM_DIR env var, then tmp/roms/4980, then tmp/roms.
 fn rom_dir() -> Option<PathBuf> {
     if let Ok(dir) = std::env::var("BBK_ROM_DIR") {
         let p = PathBuf::from(dir);
         return p.is_dir().then_some(p);
     }
-    // Default: <workspace_root>/tmp/roms
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let candidate = manifest
-        .parent()
-        .and_then(|p| p.parent())
-        .map(|root| root.join("tmp").join("roms"));
-    candidate.filter(|p| p.is_dir())
+    let root = manifest.parent().and_then(|p| p.parent())?;
+
+    // Try tmp/roms/4980 first (model-specific directory)
+    let candidate_4980 = root.join("tmp").join("roms").join("4980");
+    if candidate_4980.is_dir() {
+        return Some(candidate_4980);
+    }
+
+    // Fall back to tmp/roms
+    let candidate = root.join("tmp").join("roms");
+    if candidate.is_dir() {
+        Some(candidate)
+    } else {
+        None
+    }
 }
 
 /// Collect all .gam files in a directory (non-recursive).
@@ -197,7 +207,7 @@ fn run_one(path: &Path) -> Result<bool, String> {
 fn save_frame_as_bmp(path: &Path, framebuffer: &[bool; 159 * 96]) -> std::io::Result<()> {
     let width = 159u32;
     let height = 96u32;
-    let row_bytes = ((width * 3 + 3) / 4) * 4; // BMP rows are 4-byte aligned
+    let row_bytes = (width * 3).div_ceil(4) * 4; // BMP rows are 4-byte aligned
     let pixel_data_size = row_bytes * height;
     let file_size = 54 + pixel_data_size;
 

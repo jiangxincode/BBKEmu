@@ -126,11 +126,39 @@ This tool analyzes BBK OS ROM files for emulation development and debugging.
 
 ## Testing
 
+### Unit Tests
+
 Run the unit tests:
 
 ```bash
 cargo test --workspace
 ```
+
+### Smoke Tests
+
+Smoke tests verify that all games load and run without panicking. These tests require game assets and ROM files, so they are marked as `#[ignore]` and must be run explicitly.
+
+**Prerequisites:**
+- Game files (`.gam`) in `tmp/games/`
+- ROM files (`8.BIN`, `E.BIN`) in `tmp/roms/4980/`
+
+**Run smoke tests:**
+
+```bash
+# Basic smoke test: load all games and check for panics (600 frames)
+cargo test -p bbkemu-core --test smoke smoke_all_games -- --ignored --nocapture
+
+# Screenshot test: generate BMP screenshots for visual inspection (600 frames)
+cargo test -p bbkemu-core --test smoke smoke_screenshot_all_games -- --ignored --nocapture
+```
+
+**Environment variables:**
+- `BBK_GAME_DIR` — override game directory (default: `tmp/games`)
+- `BBK_ROM_DIR` — override ROM directory (default: `tmp/roms/4980`)
+
+**Output:**
+- Screenshots are saved to `tmp/smoke_screenshots/` (or `tmp/smoke_screenshots_extended/` for extended test)
+- Each game produces a 159×96 BMP file with green-tinted monochrome LCD simulation
 
 ## Architecture
 
@@ -182,7 +210,7 @@ timers.
 - [Memory Map](docs/MEMORY-MAP.md) — Memory layout, hardware registers, and keyboard matrix
 - [System Calls](docs/SYSCALLS.md) — System call reference
 - [GAM Format](docs/GAM_FORMAT.md) — File format specification
-- [Tested Games](docs/TESTED-GAMES.md) — Game compatibility list
+- [Game Compatibility](docs/GAME-COMPATIBILITY.md) — Game compatibility list and test results
 
 ## Game Compatibility
 
