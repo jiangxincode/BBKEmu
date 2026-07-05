@@ -45,7 +45,7 @@ bbkemu game.gam -8 8.BIN -e E.BIN
 # With options
 bbkemu game.gam -8 8.BIN -e E.BIN --scale 4 --model 4980 --debug --fullscreen
 
-# If ROM files are in the same directory or system/ subdirectory
+# If ROM files are in system/BBKEmu/<model>/, system/BBKEmu/, or current directory
 bbkemu game.gam
 ```
 
@@ -77,7 +77,9 @@ BBKEmu can be used as a libretro core with RetroArch.
    - Windows: `target/release/bbkemu_libretro.dll`
    - Linux: `target/release/libbbkemu_libretro.so`
    - macOS: `target/release/libbbkemu_libretro.dylib`
-3. Place ROM files in RetroArch's `system/BBKEmu/` directory
+3. Place ROM files in the appropriate directory:
+   - **Recommended:** `system/BBKEmu/<model>/` (e.g., `system/BBKEmu/A4980/`)
+   - **Legacy:** `system/BBKEmu/` or `system/`
 
 **Load the core in RetroArch:**
 

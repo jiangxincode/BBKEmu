@@ -91,12 +91,18 @@ fn main() -> Result<()> {
     log::info!("Emulator created");
 
     // Load optional ROMs
+    let model_name = bbk_model.name;
     if let Some(path) = &cli.rom8 {
         let data = fs::read(path)?;
         emu.load_rom_8(&data);
     } else {
-        // Try to load font ROM from default location
-        let default_paths = ["system/BBKEmu/8.BIN", "8.BIN"];
+        // Try to load font ROM from default locations
+        // Search order: model-specific dir, legacy dir, current dir
+        let default_paths = [
+            format!("system/BBKEmu/{}/8.BIN", model_name),
+            "system/BBKEmu/8.BIN".to_string(),
+            "8.BIN".to_string(),
+        ];
         for path in &default_paths {
             if let Ok(data) = fs::read(path) {
                 log::info!("Loading font ROM from {}", path);
@@ -110,7 +116,11 @@ fn main() -> Result<()> {
         let data = fs::read(path)?;
         emu.load_rom_e(&data);
     } else {
-        let default_paths = ["system/BBKEmu/E.BIN", "E.BIN"];
+        let default_paths = [
+            format!("system/BBKEmu/{}/E.BIN", model_name),
+            "system/BBKEmu/E.BIN".to_string(),
+            "E.BIN".to_string(),
+        ];
         for path in &default_paths {
             if let Ok(data) = fs::read(path) {
                 log::info!("Loading OS ROM from {}", path);

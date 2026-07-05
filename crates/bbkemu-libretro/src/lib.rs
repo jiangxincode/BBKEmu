@@ -1,12 +1,15 @@
 //! BBKEmu libretro core
 
+use std::ffi::CStr;
 use std::os::raw::{c_char, c_void};
+use std::path::PathBuf;
 
-use bbkemu_core::{model, Emulator};
+use bbkemu_core::{model, BbkModel, Emulator};
 
 // libretro constants
 const RETRO_API_VERSION: u32 = 1;
 const RETRO_REGION_NTSC: u32 = 0;
+const RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY: u32 = 9;
 
 // Type aliases for libretro callbacks
 type RetroEnvironmentT = Option<unsafe extern "C" fn(cmd: u32, data: *mut c_void) -> bool>;
@@ -62,6 +65,72 @@ static mut EMULATOR: Option<Emulator> = None;
 /// Framebuffer for rendering
 static mut FRAMEBUFFER: [u16; 159 * 96] = [0; 159 * 96];
 
+/// Environment callback for querying system directory
+static mut ENVIRONMENT_CB: RetroEnvironmentT = None;
+
+/// Get the system directory from RetroArch
+fn get_system_directory() -> Option<PathBuf> {
+    unsafe {
+        let cb = ENVIRONMENT_CB?;
+        let mut dir: *const c_char = std::ptr::null();
+        if cb(
+            RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY,
+            &mut dir as *mut _ as *mut c_void,
+        ) && !dir.is_null()
+        {
+            let cstr = CStr::from_ptr(dir);
+            return Some(PathBuf::from(cstr.to_str().ok()?));
+        }
+        None
+    }
+}
+
+/// Try to load ROM files for the given model
+fn load_roms_for_model(emu: &mut Emulator, model: &BbkModel) {
+    let system_dir = get_system_directory();
+    let model_name = model.name;
+
+    // Build search paths for ROM files
+    // Priority: system/BBKEmu/<model>/ > system/BBKEmu/ > system/
+    let rom8_paths: Vec<PathBuf> = if let Some(ref dir) = system_dir {
+        vec![
+            dir.join("BBKEmu").join(model_name).join("8.BIN"),
+            dir.join("BBKEmu").join("8.BIN"),
+            dir.join("8.BIN"),
+        ]
+    } else {
+        vec![]
+    };
+
+    let rom_e_paths: Vec<PathBuf> = if let Some(ref dir) = system_dir {
+        vec![
+            dir.join("BBKEmu").join(model_name).join("E.BIN"),
+            dir.join("BBKEmu").join("E.BIN"),
+            dir.join("E.BIN"),
+        ]
+    } else {
+        vec![]
+    };
+
+    // Load font ROM (8.BIN)
+    for path in &rom8_paths {
+        if let Ok(data) = std::fs::read(path) {
+            log::info!("Loading font ROM from {}", path.display());
+            emu.load_rom_8(&data);
+            break;
+        }
+    }
+
+    // Load OS ROM (E.BIN)
+    for path in &rom_e_paths {
+        if let Ok(data) = std::fs::read(path) {
+            log::info!("Loading OS ROM from {}", path.display());
+            emu.load_rom_e(&data);
+            break;
+        }
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn retro_api_version() -> u32 {
     RETRO_API_VERSION
@@ -69,6 +138,12 @@ pub extern "C" fn retro_api_version() -> u32 {
 
 #[no_mangle]
 pub extern "C" fn retro_init() {
+    // Initialize logger for libretro core
+    let _ = env_logger::builder()
+        .filter_level(log::LevelFilter::Info)
+        .is_test(false)
+        .try_init();
+
     unsafe {
         EMULATOR = Some(Emulator::new(&model::MODEL_4980));
     }
@@ -84,8 +159,10 @@ pub extern "C" fn retro_deinit() {
 }
 
 #[no_mangle]
-pub extern "C" fn retro_set_environment(_cb: RetroEnvironmentT) {
-    // TODO: Store callback
+pub extern "C" fn retro_set_environment(cb: RetroEnvironmentT) {
+    unsafe {
+        ENVIRONMENT_CB = cb;
+    }
 }
 
 #[no_mangle]
@@ -151,6 +228,11 @@ pub unsafe extern "C" fn retro_load_game(info: *const RetroGameInfo) -> bool {
     let game_data = std::slice::from_raw_parts(data, size);
 
     if let Some(ref mut emu) = EMULATOR {
+        // Load ROMs before loading the game
+        // Default to A4980 model; could be enhanced to detect from game data
+        let bbk_model = &model::MODEL_4980;
+        load_roms_for_model(emu, bbk_model);
+
         match emu.load_gam(game_data) {
             Ok(()) => {
                 log::info!("Game loaded successfully");

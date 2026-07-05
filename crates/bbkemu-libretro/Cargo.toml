@@ -12,3 +12,4 @@ crate-type = ["cdylib"]
 [dependencies]
 bbkemu-core = { path = "../bbkemu-core" }
 log = { workspace = true }
+env_logger = { workspace = true }
