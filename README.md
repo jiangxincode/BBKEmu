@@ -1,6 +1,10 @@
 # BBKEmu —— BBK Electronic Dictionary Game Emulator
 
 <p align="center">
+  <img src="res/logo-banner.svg" alt="BBKEmu" width="600">
+</p>
+
+<p align="center">
   <a href="https://github.com/jiangxincode/BBKEmu/actions/workflows/ci.yml"><img src="https://github.com/jiangxincode/BBKEmu/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/jiangxincode/BBKEmu/releases/latest"><img src="https://img.shields.io/github/v/release/jiangxincode/BBKEmu" alt="Release"></a>
   <a href="https://github.com/jiangxincode/BBKEmu/releases"><img src="https://img.shields.io/github/downloads/jiangxincode/BBKEmu/total" alt="Downloads"></a>
