@@ -205,12 +205,12 @@ fn run_one(path: &Path) -> Result<bool, String> {
 
 /// Save the LCD framebuffer as a PNG file for visual inspection.
 fn save_frame_as_png(path: &Path, framebuffer: &[bool; 159 * 96]) -> image::ImageResult<()> {
-    let width = 159;
-    let height = 96;
+    let width = 159u32;
+    let height = 96u32;
     let mut img = image::RgbImage::new(width, height);
 
-    for y in 0..height as u32 {
-        for x in 0..width as u32 {
+    for y in 0..height {
+        for x in 0..width {
             let pixel = framebuffer[(y * 159 + x) as usize];
             // Green-tinted monochrome (like the original LCD)
             let color = if pixel {
