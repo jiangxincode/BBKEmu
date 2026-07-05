@@ -96,10 +96,7 @@ fn main() -> Result<()> {
         emu.load_rom_8(&data);
     } else {
         // Try to load font ROM from default location
-        let default_paths = [
-            "system/BBKEmu/8.BIN",
-            "8.BIN",
-        ];
+        let default_paths = ["system/BBKEmu/8.BIN", "8.BIN"];
         for path in &default_paths {
             if let Ok(data) = fs::read(path) {
                 log::info!("Loading font ROM from {}", path);
@@ -113,10 +110,7 @@ fn main() -> Result<()> {
         let data = fs::read(path)?;
         emu.load_rom_e(&data);
     } else {
-        let default_paths = [
-            "system/BBKEmu/E.BIN",
-            "E.BIN",
-        ];
+        let default_paths = ["system/BBKEmu/E.BIN", "E.BIN"];
         for path in &default_paths {
             if let Ok(data) = fs::read(path) {
                 log::info!("Loading OS ROM from {}", path);
