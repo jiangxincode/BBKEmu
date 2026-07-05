@@ -87,47 +87,30 @@ fn get_system_directory() -> Option<PathBuf> {
 
 /// Try to load ROM files for the given model
 fn load_roms_for_model(emu: &mut Emulator, model: &BbkModel) {
-    let system_dir = get_system_directory();
+    let Some(system_dir) = get_system_directory() else {
+        log::warn!("Could not get system directory from RetroArch");
+        return;
+    };
+
     let model_name = model.name;
-
-    // Build search paths for ROM files
-    // Priority: system/BBKEmu/<model>/ > system/BBKEmu/ > system/
-    let rom8_paths: Vec<PathBuf> = if let Some(ref dir) = system_dir {
-        vec![
-            dir.join("BBKEmu").join(model_name).join("8.BIN"),
-            dir.join("BBKEmu").join("8.BIN"),
-            dir.join("8.BIN"),
-        ]
-    } else {
-        vec![]
-    };
-
-    let rom_e_paths: Vec<PathBuf> = if let Some(ref dir) = system_dir {
-        vec![
-            dir.join("BBKEmu").join(model_name).join("E.BIN"),
-            dir.join("BBKEmu").join("E.BIN"),
-            dir.join("E.BIN"),
-        ]
-    } else {
-        vec![]
-    };
+    let rom_dir = system_dir.join("BBKEmu").join(model_name);
 
     // Load font ROM (8.BIN)
-    for path in &rom8_paths {
-        if let Ok(data) = std::fs::read(path) {
-            log::info!("Loading font ROM from {}", path.display());
-            emu.load_rom_8(&data);
-            break;
-        }
+    let rom8_path = rom_dir.join("8.BIN");
+    if let Ok(data) = std::fs::read(&rom8_path) {
+        log::info!("Loading font ROM from {}", rom8_path.display());
+        emu.load_rom_8(&data);
+    } else {
+        log::warn!("Font ROM not found at {}", rom8_path.display());
     }
 
     // Load OS ROM (E.BIN)
-    for path in &rom_e_paths {
-        if let Ok(data) = std::fs::read(path) {
-            log::info!("Loading OS ROM from {}", path.display());
-            emu.load_rom_e(&data);
-            break;
-        }
+    let rom_e_path = rom_dir.join("E.BIN");
+    if let Ok(data) = std::fs::read(&rom_e_path) {
+        log::info!("Loading OS ROM from {}", rom_e_path.display());
+        emu.load_rom_e(&data);
+    } else {
+        log::warn!("OS ROM not found at {}", rom_e_path.display());
     }
 }
 
