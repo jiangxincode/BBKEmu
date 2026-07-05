@@ -7,7 +7,7 @@ use crate::cpu::CpuWrapper;
 use crate::debug::Debugger;
 use crate::gam::GamFile;
 use crate::input::{BbkKey, Input};
-use crate::lcd::Lcd;
+use crate::lcd::{Lcd, LcdOrientation};
 use crate::memory::Memory;
 use crate::model::{BbkModel, MODEL_4980};
 use crate::save::SaveState;
@@ -26,6 +26,8 @@ pub struct Emulator {
     pub debug: Debugger,
     /// Current model
     model: &'static BbkModel,
+    /// LCD display orientation
+    lcd_orientation: LcdOrientation,
     /// Whether the emulator is running
     running: bool,
     /// Frame counter
@@ -57,6 +59,7 @@ impl Emulator {
             audio,
             debug: Debugger::new(),
             model,
+            lcd_orientation: LcdOrientation::Portrait,
             running: false,
             frame_count: 0,
             timer_cycle_remainder: 0,
@@ -414,6 +417,26 @@ impl Emulator {
         &FB
     }
 
+    /// Set LCD display orientation
+    pub fn set_lcd_orientation(&mut self, orientation: LcdOrientation) {
+        self.lcd_orientation = orientation;
+    }
+
+    /// Get LCD display orientation
+    pub fn lcd_orientation(&self) -> LcdOrientation {
+        self.lcd_orientation
+    }
+
+    /// Get the display width considering orientation
+    pub fn display_width(&self) -> usize {
+        self.lcd_orientation.width()
+    }
+
+    /// Get the display height considering orientation
+    pub fn display_height(&self) -> usize {
+        self.lcd_orientation.height()
+    }
+
     /// Render LCD to boolean buffer (true = foreground, false = background)
     pub fn render_lcd_buffer(&mut self) -> [bool; 159 * 96] {
         let mut pixels = [false; 159 * 96];
@@ -452,6 +475,33 @@ impl Emulator {
 
         for i in 0..159 * 96 {
             buf[i] = if pixels[i] { theme.fg } else { theme.bg };
+        }
+    }
+
+    /// Render LCD to RGB565 buffer with orientation support
+    pub fn render_lcd_with_orientation(&mut self, buf: &mut [u16], _ghosting: bool) {
+        let pixels = self.render_lcd_buffer();
+
+        // Render with theme
+        use crate::lcd::LcdTheme;
+        let theme = LcdTheme::GREY;
+
+        match self.lcd_orientation {
+            LcdOrientation::Portrait => {
+                for i in 0..159 * 96 {
+                    buf[i] = if pixels[i] { theme.fg } else { theme.bg };
+                }
+            }
+            LcdOrientation::Landscape => {
+                // Rotate 90 degrees clockwise
+                for y in 0..96 {
+                    for x in 0..159 {
+                        let src_idx = y * 159 + x;
+                        let dst_idx = x * 96 + (95 - y);
+                        buf[dst_idx] = if pixels[src_idx] { theme.fg } else { theme.bg };
+                    }
+                }
+            }
         }
     }
 

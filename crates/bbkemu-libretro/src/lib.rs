@@ -5,7 +5,9 @@ use std::os::raw::{c_char, c_void};
 use std::panic;
 use std::path::PathBuf;
 
-use bbkemu_core::{input::BbkKey, model, BbkModel, Emulator};
+use bbkemu_core::input::BbkKey;
+use bbkemu_core::lcd::LcdOrientation;
+use bbkemu_core::{model, BbkModel, Emulator};
 
 // libretro constants
 const RETRO_API_VERSION: u32 = 1;
@@ -13,6 +15,9 @@ const RETRO_REGION_NTSC: u32 = 0;
 const RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY: u32 = 9;
 const RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS: u32 = 11;
 const RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK: u32 = 12;
+const RETRO_ENVIRONMENT_SET_VARIABLES: u32 = 16;
+const RETRO_ENVIRONMENT_GET_VARIABLE: u32 = 17;
+const RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE: u32 = 18;
 
 // RetroArch keyboard constants
 const RETROK_RETURN: u32 = 13;
@@ -101,7 +106,7 @@ pub struct RetroGameInfo {
 /// Global emulator instance
 static mut EMULATOR: Option<Emulator> = None;
 
-/// Framebuffer for rendering (RGB565 format)
+/// Framebuffer for rendering (RGB565 format, max size for either orientation)
 static mut FRAMEBUFFER: [u16; 159 * 96] = [0; 159 * 96];
 
 /// Environment callback for querying system directory
@@ -131,6 +136,17 @@ static mut KEYBOARD_CB: RetroKeyboardCallbackT = None;
 struct RetroKeyboardCallback {
     callback: RetroKeyboardCallbackT,
 }
+
+/// Core option definition for RetroArch
+#[repr(C)]
+struct RetroVariable {
+    key: *const c_char,
+    value: *const c_char,
+}
+
+/// Core options array for RetroArch
+static CORE_OPTIONS: &[&str] =
+    &["bbkemu_swap_lcd\0Swap LCD Width/Height (Restart)\0portrait;landscape\0"];
 
 /// Get the system directory from RetroArch
 fn get_system_directory() -> Option<PathBuf> {
@@ -171,6 +187,34 @@ fn load_roms_for_model(emu: &mut Emulator, model: &BbkModel) {
     }
 }
 
+/// Apply core options from RetroArch to the emulator
+fn apply_core_options(emu: &mut Emulator) {
+    unsafe {
+        let Some(cb) = ENVIRONMENT_CB else {
+            return;
+        };
+
+        // Check for swap_lcd option
+        let key = c"bbkemu_swap_lcd".as_ptr();
+        let mut var = RetroVariable {
+            key,
+            value: std::ptr::null(),
+        };
+        if cb(
+            RETRO_ENVIRONMENT_GET_VARIABLE,
+            &mut var as *mut _ as *mut c_void,
+        ) && !var.value.is_null()
+        {
+            let value = CStr::from_ptr(var.value);
+            if value.to_str().ok() == Some("landscape") {
+                emu.set_lcd_orientation(LcdOrientation::Landscape);
+            } else {
+                emu.set_lcd_orientation(LcdOrientation::Portrait);
+            }
+        }
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn retro_api_version() -> u32 {
     RETRO_API_VERSION
@@ -184,7 +228,9 @@ pub extern "C" fn retro_init() {
     }));
 
     let result = panic::catch_unwind(|| unsafe {
-        EMULATOR = Some(Emulator::new(&model::MODEL_4980));
+        let mut emu = Emulator::new(&model::MODEL_4980);
+        apply_core_options(&mut emu);
+        EMULATOR = Some(emu);
     });
 
     if result.is_err() {
@@ -212,6 +258,17 @@ pub extern "C" fn retro_set_environment(cb: RetroEnvironmentT) {
             env_cb(
                 RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK,
                 &kbd as *const _ as *mut c_void,
+            );
+
+            // Register core options
+            let options: Vec<*const c_char> = CORE_OPTIONS
+                .iter()
+                .map(|s| s.as_ptr() as *const c_char)
+                .chain(std::iter::once(std::ptr::null()))
+                .collect();
+            env_cb(
+                RETRO_ENVIRONMENT_SET_VARIABLES,
+                options.as_ptr() as *mut c_void,
             );
         }
     }
@@ -304,10 +361,17 @@ pub unsafe extern "C" fn retro_get_system_info(info: *mut RetroSystemInfo) {
 /// `info` must be a valid pointer to a `RetroSystemAvInfo` struct.
 #[no_mangle]
 pub unsafe extern "C" fn retro_get_system_av_info(info: *mut RetroSystemAvInfo) {
-    (*info).geometry.base_width = 159;
-    (*info).geometry.base_height = 96;
-    (*info).geometry.max_width = 159;
-    (*info).geometry.max_height = 96;
+    if let Some(ref emu) = EMULATOR {
+        (*info).geometry.base_width = emu.display_width() as u32;
+        (*info).geometry.base_height = emu.display_height() as u32;
+        (*info).geometry.max_width = emu.display_width() as u32;
+        (*info).geometry.max_height = emu.display_height() as u32;
+    } else {
+        (*info).geometry.base_width = 159;
+        (*info).geometry.base_height = 96;
+        (*info).geometry.max_width = 159;
+        (*info).geometry.max_height = 96;
+    }
     (*info).geometry.aspect_ratio = 0.0;
     (*info).timing.fps = 60.0;
     (*info).timing.sample_rate = 44100.0;
@@ -494,6 +558,18 @@ pub extern "C" fn retro_run() {
     let _ = panic::catch_unwind(|| {
         unsafe {
             if let Some(ref mut emu) = EMULATOR {
+                // 0. Check for core option updates
+                let mut updated = false;
+                if let Some(cb) = ENVIRONMENT_CB {
+                    if cb(
+                        RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE,
+                        &mut updated as *mut _ as *mut c_void,
+                    ) && updated
+                    {
+                        apply_core_options(emu);
+                    }
+                }
+
                 // 1. Poll input
                 if let Some(poll_cb) = INPUT_POLL_CB {
                     poll_cb();
@@ -534,18 +610,20 @@ pub extern "C" fn retro_run() {
                 // 3. Run emulation frame
                 emu.run_frame();
 
-                // 4. Render LCD
+                // 4. Render LCD with orientation support
                 #[allow(static_mut_refs)]
-                emu.render_lcd(&mut FRAMEBUFFER, false);
+                emu.render_lcd_with_orientation(&mut FRAMEBUFFER, false);
 
                 // 5. Send video frame to frontend
                 if let Some(video_cb) = VIDEO_CB {
+                    let display_width = emu.display_width() as u32;
+                    let display_height = emu.display_height() as u32;
                     #[allow(static_mut_refs)]
                     video_cb(
                         FRAMEBUFFER.as_ptr() as *const c_void,
-                        159,
-                        96,
-                        159 * 2, // pitch = width * bytes_per_pixel (RGB565 = 2 bytes)
+                        display_width,
+                        display_height,
+                        (display_width * 2) as usize, // pitch = width * bytes_per_pixel (RGB565 = 2 bytes)
                     );
                 }
             }

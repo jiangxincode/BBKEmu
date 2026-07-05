@@ -62,6 +62,7 @@ bbkemu game.gam
 | `-d, --debug` | Enable debug logging | false |
 | `-o, --output <FILE>` | Output BMP file path | output.bmp |
 | `--frames <N>` | Run headless for N frames and exit | none |
+| `--swap-lcd` | Swap LCD width/height for landscape display | false |
 
 ### RetroArch Mode
 
@@ -91,6 +92,7 @@ BBKEmu can be used as a libretro core with RetroArch.
 - ✅ Audio output (tone generation)
 - ✅ Input handling (keyboard mapping)
 - ✅ Game loading (.gam files)
+- ✅ LCD orientation option (portrait/landscape)
 
 ## Building
 
@@ -115,6 +117,14 @@ Cargo names the cdylib after its lib target, so this produces `bbkemu.dll`
 on Windows (`libbbkemu.so` on Linux, `libbbkemu.dylib` on macOS) under
 `target/release/`. Rename it to `bbkemu_libretro.<ext>` before dropping it into
 RetroArch's `cores/` directory.
+
+**Core Options:**
+
+In RetroArch, you can configure the following options under "Quick Menu" → "Core Options":
+
+| Option | Description | Values |
+|--------|-------------|--------|
+| Swap LCD Width/Height | Swap display dimensions for landscape orientation | portrait, landscape |
 
 ### ROM Analyzer Tool
 

@@ -4,6 +4,33 @@ pub const LCD_WIDTH: usize = 159;
 pub const LCD_HEIGHT: usize = 96;
 pub const FRAMEBUFFER_SIZE: usize = LCD_WIDTH * LCD_HEIGHT;
 
+/// LCD display orientation
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LcdOrientation {
+    /// Normal portrait orientation (159x96)
+    Portrait,
+    /// Swapped landscape orientation (96x159)
+    Landscape,
+}
+
+impl LcdOrientation {
+    /// Get the display width for this orientation
+    pub fn width(&self) -> usize {
+        match self {
+            Self::Portrait => LCD_WIDTH,
+            Self::Landscape => LCD_HEIGHT,
+        }
+    }
+
+    /// Get the display height for this orientation
+    pub fn height(&self) -> usize {
+        match self {
+            Self::Portrait => LCD_HEIGHT,
+            Self::Landscape => LCD_WIDTH,
+        }
+    }
+}
+
 /// LCD color theme
 pub struct LcdTheme {
     /// Background color (RGB565)
@@ -152,6 +179,32 @@ impl Lcd {
         for (i, pixel) in buf.iter_mut().enumerate().take(FRAMEBUFFER_SIZE) {
             let color = if self.pixels[i] { theme.fg } else { theme.bg };
             *pixel = color;
+        }
+    }
+
+    /// Render to RGB565 buffer with specified orientation
+    pub fn render_with_orientation(
+        &self,
+        buf: &mut [u16],
+        theme: &LcdTheme,
+        orientation: LcdOrientation,
+    ) {
+        match orientation {
+            LcdOrientation::Portrait => self.render(buf, theme),
+            LcdOrientation::Landscape => {
+                // Rotate 90 degrees clockwise: pixel[x][y] -> pixel[y][LCD_WIDTH-1-x]
+                for y in 0..LCD_HEIGHT {
+                    for x in 0..LCD_WIDTH {
+                        let src_idx = y * LCD_WIDTH + x;
+                        let dst_idx = x * LCD_HEIGHT + (LCD_HEIGHT - 1 - y);
+                        buf[dst_idx] = if self.pixels[src_idx] {
+                            theme.fg
+                        } else {
+                            theme.bg
+                        };
+                    }
+                }
+            }
         }
     }
 

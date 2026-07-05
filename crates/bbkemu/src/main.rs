@@ -10,6 +10,7 @@ use anyhow::Result;
 use clap::Parser;
 
 use bbkemu_core::input::BbkKey;
+use bbkemu_core::lcd::LcdOrientation;
 use bbkemu_core::{model, BbkModel, Emulator};
 use softbuffer::{Context, Surface};
 use winit::application::ApplicationHandler;
@@ -57,6 +58,10 @@ struct Cli {
     /// Run headless for this many frames and write --output
     #[arg(long)]
     frames: Option<u64>,
+
+    /// Swap LCD width and height for landscape display
+    #[arg(long)]
+    swap_lcd: bool,
 }
 
 fn main() -> Result<()> {
@@ -88,6 +93,10 @@ fn main() -> Result<()> {
 
     log::info!("Creating emulator...");
     let mut emu = Emulator::new(bbk_model);
+    if cli.swap_lcd {
+        emu.set_lcd_orientation(LcdOrientation::Landscape);
+        log::info!("LCD orientation: Landscape (swapped)");
+    }
     log::info!("Emulator created");
 
     // Load optional ROMs
@@ -141,7 +150,7 @@ fn run_headless(emu: &mut Emulator, frames: u64, output: &PathBuf, scale: u32) -
         emu.run_frame();
     }
     let lcd_buffer = emu.render_lcd_buffer();
-    save_bmp(output, &lcd_buffer, scale)?;
+    save_bmp(output, &lcd_buffer, scale, emu.lcd_orientation())?;
     log::info!(
         "Emulation complete after {} frames at PC=0x{:04X} ({} cycles)",
         emu.frame_count(),
@@ -189,11 +198,25 @@ impl App {
             .map_err(|error| error.to_string())?;
 
         let pixels = self.emu.render_lcd_buffer();
+        let display_width = self.emu.display_width();
+        let display_height = self.emu.display_height();
+        let orientation = self.emu.lcd_orientation();
         let mut buffer = surface.buffer_mut().map_err(|error| error.to_string())?;
+
         for y in 0..height as usize {
-            let source_y = y * 96 / height as usize;
             for x in 0..width as usize {
-                let source_x = x * 159 / width as usize;
+                let (source_x, source_y) = match orientation {
+                    LcdOrientation::Portrait => {
+                        (x * 159 / width as usize, y * 96 / height as usize)
+                    }
+                    LcdOrientation::Landscape => {
+                        // Map rotated coordinates back to original
+                        let orig_x =
+                            (display_width - 1 - x * display_width / width as usize) as usize;
+                        let orig_y = y * display_height / height as usize;
+                        (orig_y.min(158), orig_x.min(95))
+                    }
+                };
                 buffer[y * width as usize + x] = if pixels[source_y * 159 + source_x] {
                     0x0014_1814
                 } else {
@@ -211,13 +234,18 @@ impl ApplicationHandler for App {
         if self.window.is_some() {
             return;
         }
+        let display_width = self.emu.display_width() as u32;
+        let display_height = self.emu.display_height() as u32;
         let mut attributes = Window::default_attributes()
             .with_title("BBKEmu")
             .with_inner_size(LogicalSize::new(
-                (159 * self.scale) as f64,
-                (96 * self.scale) as f64,
+                (display_width * self.scale) as f64,
+                (display_height * self.scale) as f64,
             ))
-            .with_min_inner_size(LogicalSize::new(159.0, 96.0));
+            .with_min_inner_size(LogicalSize::new(
+                display_width as f64,
+                display_height as f64,
+            ));
         if self.fullscreen {
             attributes = attributes.with_fullscreen(Some(Fullscreen::Borderless(None)));
         }
@@ -268,7 +296,7 @@ impl ApplicationHandler for App {
                 if code == KeyCode::F12 && event.state == ElementState::Pressed {
                     let pixels = self.emu.render_lcd_buffer();
                     let path = PathBuf::from("bbkemu-screenshot.bmp");
-                    match save_bmp(&path, &pixels, 1) {
+                    match save_bmp(&path, &pixels, 1, self.emu.lcd_orientation()) {
                         Ok(()) => log::info!("Screenshot saved to {}", path.display()),
                         Err(error) => log::error!("Failed to save screenshot: {error}"),
                     }
@@ -354,14 +382,21 @@ fn map_key(code: KeyCode) -> Option<BbkKey> {
     })
 }
 
-fn save_bmp(path: &PathBuf, pixels: &[bool; 159 * 96], scale: u32) -> Result<()> {
-    let width = 159 * scale;
-    let height = 96 * scale;
+fn save_bmp(
+    path: &PathBuf,
+    pixels: &[bool; 159 * 96],
+    scale: u32,
+    orientation: LcdOrientation,
+) -> Result<()> {
+    let (bmp_width, bmp_height) = match orientation {
+        LcdOrientation::Portrait => (159 * scale, 96 * scale),
+        LcdOrientation::Landscape => (96 * scale, 159 * scale),
+    };
 
     // BMP file format
-    let row_size = width * 3;
+    let row_size = bmp_width * 3;
     let row_stride = (row_size + 3) & !3;
-    let file_size = 54 + row_stride * height;
+    let file_size = 54 + row_stride * bmp_height;
     let mut bmp = Vec::with_capacity(file_size as usize);
 
     // BMP header
@@ -372,8 +407,8 @@ fn save_bmp(path: &PathBuf, pixels: &[bool; 159 * 96], scale: u32) -> Result<()>
 
     // DIB header
     bmp.extend_from_slice(&40u32.to_le_bytes()); // Header size
-    bmp.extend_from_slice(&(width as i32).to_le_bytes());
-    bmp.extend_from_slice(&(height as i32).to_le_bytes());
+    bmp.extend_from_slice(&(bmp_width as i32).to_le_bytes());
+    bmp.extend_from_slice(&(bmp_height as i32).to_le_bytes());
     bmp.extend_from_slice(&1u16.to_le_bytes()); // Planes
     bmp.extend_from_slice(&24u16.to_le_bytes()); // Bits per pixel
     bmp.extend_from_slice(&0u32.to_le_bytes()); // Compression
@@ -387,18 +422,39 @@ fn save_bmp(path: &PathBuf, pixels: &[bool; 159 * 96], scale: u32) -> Result<()>
     let bg_color = [0xDA, 0xD6, 0x00]; // Grey background (BGR)
     let fg_color = [0x00, 0x00, 0x00]; // Black foreground (BGR)
 
-    for y in (0..96).rev() {
-        for _dy in 0..scale {
-            for x in 0..159 {
-                let pixel = pixels[y * 159 + x];
-                let color = if pixel { &fg_color } else { &bg_color };
-                for _dx in 0..scale {
-                    bmp.extend_from_slice(color);
+    match orientation {
+        LcdOrientation::Portrait => {
+            for y in (0..96).rev() {
+                for _dy in 0..scale {
+                    for x in 0..159 {
+                        let pixel = pixels[y * 159 + x];
+                        let color = if pixel { &fg_color } else { &bg_color };
+                        for _dx in 0..scale {
+                            bmp.extend_from_slice(color);
+                        }
+                    }
+                    // Pad to 4-byte boundary
+                    let padding = (row_stride - row_size) as usize;
+                    bmp.extend_from_slice(&vec![0u8; padding]);
                 }
             }
-            // Pad to 4-byte boundary
-            let padding = (row_stride - row_size) as usize;
-            bmp.extend_from_slice(&vec![0u8; padding]);
+        }
+        LcdOrientation::Landscape => {
+            // Rotated 90 degrees clockwise
+            for x in 0..159 {
+                for _dx in 0..scale {
+                    for y in (0..96).rev() {
+                        let pixel = pixels[y * 159 + x];
+                        let color = if pixel { &fg_color } else { &bg_color };
+                        for _dy in 0..scale {
+                            bmp.extend_from_slice(color);
+                        }
+                    }
+                    // Pad to 4-byte boundary
+                    let padding = (row_stride - row_size) as usize;
+                    bmp.extend_from_slice(&vec![0u8; padding]);
+                }
+            }
         }
     }
 
