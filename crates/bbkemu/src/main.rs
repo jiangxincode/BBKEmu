@@ -79,6 +79,14 @@ struct Cli {
     /// Cheat codes (format: AAAAAAVV for address=value, can specify multiple)
     #[arg(long)]
     cheat: Vec<String>,
+
+    /// Take a screenshot after N frames and exit (saves as PNG)
+    #[arg(short = 'S', long = "screenshot", value_name = "PATH")]
+    screenshot: Option<PathBuf>,
+
+    /// Number of frames to run before taking screenshot (default: 30)
+    #[arg(long = "screenshot-frames", default_value = "30")]
+    screenshot_frames: u32,
 }
 
 fn main() -> Result<()> {
@@ -171,6 +179,26 @@ fn main() -> Result<()> {
 
     if let Some(frames) = cli.frames {
         run_headless(&mut emu, frames, &cli.output, cli.scale)?;
+        return Ok(());
+    }
+
+    // Screenshot mode: run N frames then save screenshot and exit
+    if let Some(ref screenshot_path) = cli.screenshot {
+        log::info!(
+            "Running {} frames before taking screenshot...",
+            cli.screenshot_frames
+        );
+        for _ in 0..cli.screenshot_frames {
+            emu.run_frame();
+        }
+        let lcd_buffer = emu.render_lcd_buffer();
+        save_png(
+            screenshot_path,
+            &lcd_buffer,
+            cli.scale,
+            emu.lcd_orientation(),
+        )?;
+        log::info!("Screenshot saved to {}", screenshot_path.display());
         return Ok(());
     }
 
