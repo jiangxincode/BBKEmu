@@ -60,7 +60,7 @@ bbkemu game.gam
 | `-f, --fullscreen` | Start in fullscreen mode | false |
 | `-m, --model <MODEL>` | BBK model (4980, 4988) | 4980 |
 | `-d, --debug` | Enable debug logging | false |
-| `-o, --output <FILE>` | Output BMP file path | output.bmp |
+| `-o, --output <FILE>` | Output PNG file path | output.png |
 | `--frames <N>` | Run headless for N frames and exit | none |
 | `--swap-lcd` | Swap LCD width/height for landscape display | false |
 | `--cpu-rate <RATE>` | CPU clock rate multiplier (0.25-8.0) | 1.0 |

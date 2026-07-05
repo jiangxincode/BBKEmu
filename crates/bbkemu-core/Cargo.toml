@@ -12,6 +12,7 @@ bincode = { workspace = true }
 log = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
+image = { workspace = true }
 
 [dev-dependencies]
 cargo-husky = { version = "1", default-features = false, features = ["precommit-hook", "run-cargo-fmt", "run-cargo-clippy"] }
