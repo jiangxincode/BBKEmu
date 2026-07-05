@@ -28,31 +28,15 @@ jobs:
 
       - name: Prepare deployment directory
         run: |
-          # Create deployment directory
-          mkdir -p _site
-
-          # Copy site files
-          cp -r site/* _site/
-
-          # Copy res directory (logo)
-          cp -r res _site/
-
-          # Copy docs/images for game screenshots
-          mkdir -p _site/docs
-          cp -r docs/images _site/docs/
-
-          # Fix image paths: change ../docs/images/ to docs/images/
-          sed -i 's|../docs/images/|docs/images/|g' _site/index.html
-          # Fix logo paths: change ../res/ to res/
-          sed -i 's|../res/|res/|g' _site/index.html
-
+          # Copy site files to repo root for deployment
+          cp -r site/* .
           # Disable Jekyll processing
-          touch _site/.nojekyll
+          touch .nojekyll
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '_site'
+          path: '.'
 
   deploy:
     environment:

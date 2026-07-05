@@ -5,6 +5,7 @@
 </p>
 
 <p align="center">
+  <a href="https://jiangxincode.github.io/BBKEmu/"><img src="https://img.shields.io/badge/Website-BBKEmu-E8553A?logo=githubpages&logoColor=white" alt="Website"></a>
   <a href="https://github.com/jiangxincode/BBKEmu/actions/workflows/ci.yml"><img src="https://github.com/jiangxincode/BBKEmu/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/jiangxincode/BBKEmu/releases/latest"><img src="https://img.shields.io/github/v/release/jiangxincode/BBKEmu" alt="Release"></a>
   <a href="https://github.com/jiangxincode/BBKEmu/releases"><img src="https://img.shields.io/github/downloads/jiangxincode/BBKEmu/total" alt="Downloads"></a>
