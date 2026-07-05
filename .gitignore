@@ -1,5 +1,6 @@
 tmp/
 target/
+.claude/
 .codegraph/
 Cargo.lock
 *.dll
