@@ -30,7 +30,7 @@ All 152 BBK games in the test suite load and run without fatal errors. Each game
 | 9 | 仙界传说 | 仙界传说.gam | ![仙界传说](images/仙界传说.png) | ✅ Pass | |
 | 10 | 伏魔记 | 伏魔记.gam | ![伏魔记](images/伏魔记.png) | ✅ Pass | |
 | 11 | 伏魔记(有声版) | 伏魔记(有声版).gam | ![伏魔记(有声版)](images/伏魔记(有声版).png) | ✅ Pass | |
-| 12 | 伏魔记 加秘籍 | 伏魔记 加秘籍.gam | ![伏魔记 加秘籍](<images/伏魔记 加秘籍.bmp>) | ✅ Pass | |
+| 12 | 伏魔记 加秘籍 | 伏魔记 加秘籍.gam | ![伏魔记 加秘籍](<images/伏魔记 加秘籍.png>) | ✅ Pass | |
 | 13 | 伏魔记-伏魔记外传 | 伏魔记-伏魔记外传.gam | ![伏魔记-伏魔记外传](images/伏魔记-伏魔记外传.png) | ⚠️ Warn | Blank frame at 600 frames |
 | 14 | 伏魔记-新护神记 | 伏魔记-新护神记.gam | ![伏魔记-新护神记](images/伏魔记-新护神记.png) | ✅ Pass | |
 | 15 | 伏魔记-清风传 | 伏魔记-清风传.gam | ![伏魔记-清风传](images/伏魔记-清风传.png) | ✅ Pass | |
@@ -50,7 +50,7 @@ All 152 BBK games in the test suite load and run without fatal errors. Each game
 | 29 | 基督山传奇 | 基督山传奇.gam | ![基督山传奇](images/基督山传奇.png) | ✅ Pass | |
 | 30 | 天之骄子 | 天之骄子.gam | ![天之骄子](images/天之骄子.png) | ✅ Pass | |
 | 31 | 天之骄子终曲版 | 天之骄子终曲版.gam | ![天之骄子终曲版](images/天之骄子终曲版.png) | ✅ Pass | |
-| 32 | 妖 传说 | 妖 传说.gam | ![妖 传说](<images/妖 传说.bmp>) | ⚠️ Warn | Blank frame at 600 frames |
+| 32 | 妖 传说 | 妖 传说.gam | ![妖 传说](<images/妖 传说.png>) | ⚠️ Warn | Blank frame at 600 frames |
 | 33 | 妖·传说终曲版 | 妖·传说终曲版.gam | ![妖·传说终曲版](images/妖·传说终曲版.png) | ⚠️ Warn | Blank frame at 600 frames |
 | 34 | 封魔录 | 封魔录.gam | ![封魔录](images/封魔录.png) | ✅ Pass | |
 | 35 | 将门风云 | 将门风云.gam | ![将门风云](images/将门风云.png) | ✅ Pass | |
@@ -101,7 +101,7 @@ All 152 BBK games in the test suite load and run without fatal errors. Each game
 | 80 | 白中传奇 | 白中传奇.gam | ![白中传奇](images/白中传奇.png) | ✅ Pass | |
 | 81 | 紫璇刀 | 紫璇刀.gam | ![紫璇刀](images/紫璇刀.png) | ✅ Pass | |
 | 82 | 纯蓝记 | 纯蓝记.gam | ![纯蓝记](images/纯蓝记.png) | ✅ Pass | |
-| 83 | 老观寺传奇 加秘籍 | 老观寺传奇 加秘籍.gam | ![老观寺传奇 加秘籍](<images/老观寺传奇 加秘籍.bmp>) | ✅ Pass | |
+| 83 | 老观寺传奇 加秘籍 | 老观寺传奇 加秘籍.gam | ![老观寺传奇 加秘籍](<images/老观寺传奇 加秘籍.png>) | ✅ Pass | |
 | 84 | 老观寺传奇终曲版 | 老观寺传奇终曲版.gam | ![老观寺传奇终曲版](images/老观寺传奇终曲版.png) | ✅ Pass | |
 
 ### Puzzle / Strategy Games
@@ -150,7 +150,7 @@ All 152 BBK games in the test suite load and run without fatal errors. Each game
 | 14 | 抗日小兵 | 抗日小兵.gam | ![抗日小兵](images/抗日小兵.png) | ✅ Pass | |
 | 15 | 挖金子 | 挖金子.gam | ![挖金子](images/挖金子.png) | ✅ Pass | |
 | 16 | 泡泡侠 | 泡泡侠.gam | ![泡泡侠](images/泡泡侠.png) | ✅ Pass | |
-| 17 | 泡泡侠 加速版 | 泡泡侠 加速版.gam | ![泡泡侠 加速版](<images/泡泡侠 加速版.bmp>) | ✅ Pass | |
+| 17 | 泡泡侠 加速版 | 泡泡侠 加速版.gam | ![泡泡侠 加速版](<images/泡泡侠 加速版.png>) | ✅ Pass | |
 | 18 | 洛克人 | 洛克人.gam | ![洛克人](images/洛克人.png) | ✅ Pass | |
 | 19 | 滑雪 | 滑雪.gam | ![滑雪](images/滑雪.png) | ✅ Pass | |
 | 20 | 潜艇大战 | 潜艇大战.gam | ![潜艇大战](images/潜艇大战.png) | ✅ Pass | |
@@ -159,7 +159,7 @@ All 152 BBK games in the test suite load and run without fatal errors. Each game
 | 23 | 猪小弟 | 猪小弟.gam | ![猪小弟](images/猪小弟.png) | ✅ Pass | |
 | 24 | 猫狗大战 | 猫狗大战.gam | ![猫狗大战](images/猫狗大战.png) | ✅ Pass | |
 | 25 | 赛马 | 赛马.gam | ![赛马](images/赛马.png) | ✅ Pass | |
-| 26 | 赤壁之战 乱世枭雄 | 赤壁之战 乱世枭雄.gam | ![赤壁之战 乱世枭雄](<images/赤壁之战 乱世枭雄.bmp>) | ✅ Pass | |
+| 26 | 赤壁之战 乱世枭雄 | 赤壁之战 乱世枭雄.gam | ![赤壁之战 乱世枭雄](<images/赤壁之战 乱世枭雄.png>) | ✅ Pass | |
 | 27 | 赤壁之战乱世枭雄终曲版 | 赤壁之战乱世枭雄终曲版.gam | ![赤壁之战乱世枭雄终曲版](images/赤壁之战乱世枭雄终曲版.png) | ✅ Pass | |
 | 28 | 跟花 | 跟花.gam | ![跟花](images/跟花.png) | ✅ Pass | |
 | 29 | 跳蛋 | 跳蛋.gam | ![跳蛋](images/跳蛋.png) | ✅ Pass | |
