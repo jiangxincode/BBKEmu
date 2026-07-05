@@ -67,6 +67,15 @@ bbkemu game.gam
 | `--timer-rate <RATE>` | Timer clock rate multiplier (0.25-8.0) | 1.0 |
 | `--key-repeat-interval <MS>` | Minimum key repeat interval in ms (0 = no limit) | 0 |
 
+**Keyboard shortcuts:**
+
+| Key | Action |
+|-----|--------|
+| `F5` | Save state |
+| `F8` | Load state |
+| `F12` | Take screenshot |
+| `Escape` | Exit emulator |
+
 ### RetroArch Mode
 
 BBKEmu can be used as a libretro core with RetroArch.

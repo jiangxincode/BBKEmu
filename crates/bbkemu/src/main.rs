@@ -11,6 +11,7 @@ use clap::Parser;
 
 use bbkemu_core::input::BbkKey;
 use bbkemu_core::lcd::LcdOrientation;
+use bbkemu_core::save::SaveState;
 use bbkemu_core::{model, BbkModel, Emulator};
 use softbuffer::{Context, Surface};
 use winit::application::ApplicationHandler;
@@ -159,9 +160,13 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    // Save file path: same as game file with .sav extension
+    let save_path = cli.game.with_extension("sav");
+    log::info!("Save file: {}", save_path.display());
+
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Wait);
-    let mut app = App::new(emu, cli.scale, cli.fullscreen);
+    let mut app = App::new(emu, cli.scale, cli.fullscreen, save_path);
     event_loop.run_app(&mut app)?;
     Ok(())
 }
@@ -190,10 +195,11 @@ struct App {
     context: Option<Context<Rc<Window>>>,
     surface: Option<Surface<Rc<Window>, Rc<Window>>>,
     next_frame: Instant,
+    save_path: PathBuf,
 }
 
 impl App {
-    fn new(emu: Emulator, scale: u32, fullscreen: bool) -> Self {
+    fn new(emu: Emulator, scale: u32, fullscreen: bool, save_path: PathBuf) -> Self {
         Self {
             emu,
             scale,
@@ -202,6 +208,7 @@ impl App {
             context: None,
             surface: None,
             next_frame: Instant::now(),
+            save_path,
         }
     }
 
@@ -314,6 +321,35 @@ impl ApplicationHandler for App {
                 let PhysicalKey::Code(code) = event.physical_key else {
                     return;
                 };
+                if code == KeyCode::F5 && event.state == ElementState::Pressed {
+                    // Save state
+                    let state = self.emu.save_state();
+                    match std::fs::write(&self.save_path, state.to_bytes()) {
+                        Ok(()) => log::info!("State saved to {}", self.save_path.display()),
+                        Err(error) => log::error!("Failed to save state: {error}"),
+                    }
+                    return;
+                }
+                if code == KeyCode::F8 && event.state == ElementState::Pressed {
+                    // Load state
+                    if self.save_path.exists() {
+                        match std::fs::read(&self.save_path) {
+                            Ok(bytes) => match SaveState::from_bytes(&bytes) {
+                                Ok(state) => match self.emu.load_save_state(&state) {
+                                    Ok(()) => {
+                                        log::info!("State loaded from {}", self.save_path.display())
+                                    }
+                                    Err(error) => log::error!("Failed to load state: {error}"),
+                                },
+                                Err(error) => log::error!("Failed to parse state: {error}"),
+                            },
+                            Err(error) => log::error!("Failed to read save file: {error}"),
+                        }
+                    } else {
+                        log::warn!("No save file found at {}", self.save_path.display());
+                    }
+                    return;
+                }
                 if code == KeyCode::F12 && event.state == ElementState::Pressed {
                     let pixels = self.emu.render_lcd_buffer();
                     let path = PathBuf::from("bbkemu-screenshot.bmp");
