@@ -60,13 +60,15 @@ bbkemu game.gam
 | `-f, --fullscreen` | Start in fullscreen mode | false |
 | `-m, --model <MODEL>` | BBK model (4980, 4988) | 4980 |
 | `-d, --debug` | Enable debug logging | false |
-| `-o, --output <FILE>` | Output BMP file path | output.bmp |
+| `-o, --output <FILE>` | Output PNG file path | output.png |
 | `--frames <N>` | Run headless for N frames and exit | none |
 | `--swap-lcd` | Swap LCD width/height for landscape display | false |
 | `--cpu-rate <RATE>` | CPU clock rate multiplier (0.25-8.0) | 1.0 |
 | `--timer-rate <RATE>` | Timer clock rate multiplier (0.25-8.0) | 1.0 |
 | `--key-repeat-interval <MS>` | Minimum key repeat interval in ms (0 = no limit) | 0 |
 | `--cheat <CODE>` | Cheat code (format: AAAAAAVV, can specify multiple) | none |
+| `-S, --screenshot <PATH>` | Take a screenshot after N frames and exit (saves as PNG) | none |
+| `--screenshot-frames <N>` | Number of frames to run before taking screenshot | 30 |
 
 **Keyboard shortcuts:**
 
@@ -123,6 +125,31 @@ cargo run -p bbkemu --release -- game.gam -8 8.BIN -e E.BIN
 ```
 
 The binary is produced at `target/release/bbkemu` (or `bbkemu.exe` on Windows).
+
+### Usage Examples
+
+```bash
+# Run game with GUI
+bbkemu game.gam -8 8.BIN -e E.BIN
+
+# Run headless for 100 frames and save screenshot
+bbkemu game.gam --frames 100 --output screenshot.png
+
+# Take screenshot after 30 frames (default) and exit
+bbkemu game.gam --screenshot screenshot.png
+
+# Take screenshot after 60 frames and exit
+bbkemu game.gam -S screenshot.png --screenshot-frames 60
+
+# Run in landscape mode with 2x scale
+bbkemu game.gam --swap-lcd --scale 2
+
+# Run with CPU at 2x speed
+bbkemu game.gam --cpu-rate 2.0
+
+# Run with cheat codes
+bbkemu game.gam --cheat 00100A05 --cheat 00200BFF
+```
 
 ### Libretro Core (for RetroArch)
 

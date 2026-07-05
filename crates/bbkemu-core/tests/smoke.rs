@@ -203,53 +203,26 @@ fn run_one(path: &Path) -> Result<bool, String> {
     Ok(frame_has_content(&fb))
 }
 
-/// Save the LCD framebuffer as a BMP file for visual inspection.
-fn save_frame_as_bmp(path: &Path, framebuffer: &[bool; 159 * 96]) -> std::io::Result<()> {
+/// Save the LCD framebuffer as a PNG file for visual inspection.
+fn save_frame_as_png(path: &Path, framebuffer: &[bool; 159 * 96]) -> image::ImageResult<()> {
     let width = 159u32;
     let height = 96u32;
-    let row_bytes = (width * 3).div_ceil(4) * 4; // BMP rows are 4-byte aligned
-    let pixel_data_size = row_bytes * height;
-    let file_size = 54 + pixel_data_size;
+    let mut img = image::RgbImage::new(width, height);
 
-    let mut bmp = Vec::with_capacity(file_size as usize);
-
-    // BMP header
-    bmp.extend_from_slice(b"BM");
-    bmp.extend_from_slice(&file_size.to_le_bytes());
-    bmp.extend_from_slice(&[0, 0, 0, 0]); // Reserved
-    bmp.extend_from_slice(&54u32.to_le_bytes()); // Pixel data offset
-
-    // DIB header (BITMAPINFOHEADER)
-    bmp.extend_from_slice(&40u32.to_le_bytes()); // Header size
-    bmp.extend_from_slice(&(width as i32).to_le_bytes());
-    bmp.extend_from_slice(&(height as i32).to_le_bytes());
-    bmp.extend_from_slice(&[1, 0]); // Planes
-    bmp.extend_from_slice(&[24, 0]); // Bits per pixel (RGB)
-    bmp.extend_from_slice(&[0, 0, 0, 0]); // No compression
-    bmp.extend_from_slice(&pixel_data_size.to_le_bytes());
-    bmp.extend_from_slice(&[0x13, 0x0B, 0, 0]); // X pixels per meter (~72 DPI)
-    bmp.extend_from_slice(&[0x13, 0x0B, 0, 0]); // Y pixels per meter
-    bmp.extend_from_slice(&[0, 0, 0, 0]); // Colors in palette
-    bmp.extend_from_slice(&[0, 0, 0, 0]); // Important colors
-
-    // Pixel data (BGR, bottom-up)
-    for y in (0..height as usize).rev() {
-        for x in 0..width as usize {
-            let pixel = framebuffer[y * 159 + x];
+    for y in 0..height {
+        for x in 0..width {
+            let pixel = framebuffer[(y * 159 + x) as usize];
             // Green-tinted monochrome (like the original LCD)
-            let (r, g, b) = if pixel {
-                (0x00, 0x40, 0x00) // Dark green for "on" pixels
+            let color = if pixel {
+                image::Rgb([0x00, 0x40, 0x00]) // Dark green for "on" pixels
             } else {
-                (0x90, 0xB0, 0x70) // Light green for "off" pixels (LCD background)
+                image::Rgb([0x90, 0xB0, 0x70]) // Light green for "off" pixels (LCD background)
             };
-            bmp.extend_from_slice(&[b, g, r]); // BMP uses BGR
+            img.put_pixel(x, y, color);
         }
-        // Pad to 4-byte alignment
-        let padding = (row_bytes - width * 3) as usize;
-        bmp.extend_from_slice(&vec![0u8; padding]);
     }
 
-    std::fs::write(path, &bmp)
+    img.save(path)
 }
 
 #[test]
@@ -281,7 +254,7 @@ fn smoke_screenshot_all_games() {
             .and_then(|n| n.to_str())
             .unwrap_or("unknown");
 
-        match run_and_screenshot(game, &output_dir.join(format!("{game_name}.bmp"))) {
+        match run_and_screenshot(game, &output_dir.join(format!("{game_name}.png"))) {
             Ok(true) => println!("[PASS] {game_name}"),
             Ok(false) => println!("[WARN] {game_name} (blank frame)"),
             Err(e) => {
@@ -318,7 +291,7 @@ fn run_and_screenshot(game_path: &Path, screenshot_path: &Path) -> Result<bool, 
 
     // Capture and save screenshot
     let fb = emu.render_lcd_buffer();
-    save_frame_as_bmp(screenshot_path, &fb).map_err(|e| format!("screenshot save failed: {e}"))?;
+    save_frame_as_png(screenshot_path, &fb).map_err(|e| format!("screenshot save failed: {e}"))?;
 
     Ok(frame_has_content(&fb))
 }
