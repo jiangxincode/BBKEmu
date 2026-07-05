@@ -39,7 +39,7 @@ impl Audio {
     /// Play a tone
     pub fn play_tone(&mut self, freq: u16, duration_ms: u16) {
         self.tone.frequency = freq;
-        self.tone.duration = (self.sample_rate as u32 * duration_ms as u32) / 1000;
+        self.tone.duration = (self.sample_rate * duration_ms as u32) / 1000;
         self.tone.phase = 0.0;
         self.tone.active = true;
     }

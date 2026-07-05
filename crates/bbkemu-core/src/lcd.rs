@@ -15,10 +15,26 @@ pub struct LcdTheme {
 }
 
 impl LcdTheme {
-    pub const GREY: Self = Self { bg: 0xD6DA, fg: 0x0000, ghosting: 20 };
-    pub const GREEN: Self = Self { bg: 0x96E1, fg: 0x0882, ghosting: 20 };
-    pub const BLUE: Self = Self { bg: 0x3EDD, fg: 0x09A8, ghosting: 20 };
-    pub const YELLOW: Self = Self { bg: 0xF72C, fg: 0x2920, ghosting: 20 };
+    pub const GREY: Self = Self {
+        bg: 0xD6DA,
+        fg: 0x0000,
+        ghosting: 20,
+    };
+    pub const GREEN: Self = Self {
+        bg: 0x96E1,
+        fg: 0x0882,
+        ghosting: 20,
+    };
+    pub const BLUE: Self = Self {
+        bg: 0x3EDD,
+        fg: 0x09A8,
+        ghosting: 20,
+    };
+    pub const YELLOW: Self = Self {
+        bg: 0xF72C,
+        fg: 0x2920,
+        ghosting: 20,
+    };
 }
 
 /// LCD framebuffer
@@ -33,6 +49,12 @@ pub struct Lcd {
     cursor_y: u8,
     /// Whether the display has been updated since last render
     dirty: bool,
+}
+
+impl Default for Lcd {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Lcd {
@@ -91,11 +113,7 @@ impl Lcd {
             for row in 0..font.height {
                 for col in 0..font.width {
                     if glyph.get_pixel(col, row) {
-                        self.set_pixel(
-                            self.cursor_x + col,
-                            self.cursor_y + row,
-                            true,
-                        );
+                        self.set_pixel(self.cursor_x + col, self.cursor_y + row, true);
                     }
                 }
             }
@@ -131,9 +149,9 @@ impl Lcd {
 
     /// Render to RGB565 buffer for frontend display
     pub fn render(&self, buf: &mut [u16], theme: &LcdTheme) {
-        for i in 0..FRAMEBUFFER_SIZE {
+        for (i, pixel) in buf.iter_mut().enumerate().take(FRAMEBUFFER_SIZE) {
             let color = if self.pixels[i] { theme.fg } else { theme.bg };
-            buf[i] = color;
+            *pixel = color;
         }
     }
 
@@ -146,16 +164,14 @@ impl Lcd {
         let fg_g = ((theme.fg >> 6) & 0x1F) as i16;
         let fg_b = (theme.fg & 0x1F) as i16;
 
-        for i in 0..FRAMEBUFFER_SIZE {
+        for (i, pixel) in buf.iter_mut().enumerate().take(FRAMEBUFFER_SIZE) {
             // Update ghosting accumulator
             if self.pixels[i] {
                 if self.ghosting[i] < theme.ghosting as i8 {
                     self.ghosting[i] += 1;
                 }
-            } else {
-                if self.ghosting[i] > 0 {
-                    self.ghosting[i] -= 1;
-                }
+            } else if self.ghosting[i] > 0 {
+                self.ghosting[i] -= 1;
             }
 
             // Blend colors
@@ -163,7 +179,7 @@ impl Lcd {
             let r = ((1.0 - a) * bg_r as f32 + a * fg_r as f32) as u16 & 0x1F;
             let g = ((1.0 - a) * bg_g as f32 + a * fg_g as f32) as u16 & 0x1F;
             let b = ((1.0 - a) * bg_b as f32 + a * fg_b as f32) as u16 & 0x1F;
-            buf[i] = (r << 11) | (g << 6) | b;
+            *pixel = (r << 11) | (g << 6) | b;
         }
     }
 
@@ -191,13 +207,13 @@ impl FontData {
         Self {
             width,
             height,
-            glyphs: vec![0; 256 * ((width as usize * height as usize + 7) / 8)],
+            glyphs: vec![0; 256 * (width as usize * height as usize).div_ceil(8)],
         }
     }
 
     /// Get glyph bitmap for a character
-    pub fn get_glyph(&self, ch: u8) -> Option<GlyphView> {
-        let glyph_size = (self.width as usize * self.height as usize + 7) / 8;
+    pub fn get_glyph(&self, ch: u8) -> Option<GlyphView<'_>> {
+        let glyph_size = (self.width as usize * self.height as usize).div_ceil(8);
         let offset = ch as usize * glyph_size;
         if offset + glyph_size <= self.glyphs.len() {
             Some(GlyphView {

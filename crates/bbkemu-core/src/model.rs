@@ -39,7 +39,10 @@ pub fn detect_model(bank_sys_d: u16) -> &'static BbkModel {
         0x0EA8 => &MODEL_4980,
         0x0E88 => &MODEL_4988,
         _ => {
-            log::warn!("Unknown model (bank_sys_d=0x{:04X}), defaulting to A4980", bank_sys_d);
+            log::warn!(
+                "Unknown model (bank_sys_d=0x{:04X}), defaulting to A4980",
+                bank_sys_d
+            );
             &MODEL_4980
         }
     }

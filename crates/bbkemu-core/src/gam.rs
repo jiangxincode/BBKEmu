@@ -47,21 +47,23 @@ impl GamFile {
         // Try to extract a readable name from the info block
         self.info
             .iter()
-            .filter(|&&b| b >= 0x20 && b < 0x7F)
+            .filter(|&&b| (0x20..0x7F).contains(&b))
             .map(|&b| b as char)
             .collect()
     }
 }
 
 /// System header for flash (16 bytes)
+#[allow(dead_code)]
 fn system_header() -> [u8; 16] {
     [
-        0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x2F,
+        0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00,
+        0x2F,
     ]
 }
 
 /// Game header for flash (16 bytes)
+#[allow(dead_code)]
 fn game_header(info: &[u8; 10], size: usize) -> [u8; 16] {
     let mut hdr = [0u8; 16];
     hdr[0] = 0xD0;

@@ -366,24 +366,6 @@ fn map_key(code: KeyCode) -> Option<BbkKey> {
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn maps_navigation_and_action_keys() {
-        assert_eq!(map_key(KeyCode::ArrowUp), Some(BbkKey::Up));
-        assert_eq!(map_key(KeyCode::Enter), Some(BbkKey::Enter));
-        assert_eq!(map_key(KeyCode::Backspace), Some(BbkKey::Exit));
-    }
-
-    #[test]
-    fn leaves_unmapped_host_keys_available_to_frontend() {
-        assert_eq!(map_key(KeyCode::F1), None);
-        assert_eq!(map_key(KeyCode::Escape), None);
-    }
-}
-
 fn save_bmp(path: &PathBuf, pixels: &[bool; 159 * 96], scale: u32) -> Result<()> {
     let width = 159 * scale;
     let height = 96 * scale;
@@ -434,4 +416,22 @@ fn save_bmp(path: &PathBuf, pixels: &[bool; 159 * 96], scale: u32) -> Result<()>
 
     fs::write(path, bmp)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_navigation_and_action_keys() {
+        assert_eq!(map_key(KeyCode::ArrowUp), Some(BbkKey::Up));
+        assert_eq!(map_key(KeyCode::Enter), Some(BbkKey::Enter));
+        assert_eq!(map_key(KeyCode::Backspace), Some(BbkKey::Exit));
+    }
+
+    #[test]
+    fn leaves_unmapped_host_keys_available_to_frontend() {
+        assert_eq!(map_key(KeyCode::F1), None);
+        assert_eq!(map_key(KeyCode::Escape), None);
+    }
 }

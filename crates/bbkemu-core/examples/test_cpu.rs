@@ -1,5 +1,5 @@
-use bbkemu_core::memory::Memory;
 use bbkemu_core::cpu::CpuWrapper;
+use bbkemu_core::memory::Memory;
 
 fn main() {
     println!("Creating memory...");

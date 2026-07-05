@@ -2,7 +2,7 @@
 
 use std::os::raw::{c_char, c_void};
 
-use bbkemu_core::{Emulator, model};
+use bbkemu_core::{model, Emulator};
 
 // libretro constants
 const RETRO_API_VERSION: u32 = 1;
@@ -10,14 +10,16 @@ const RETRO_REGION_NTSC: u32 = 0;
 
 // Type aliases for libretro callbacks
 type RetroEnvironmentT = Option<unsafe extern "C" fn(cmd: u32, data: *mut c_void) -> bool>;
-type RetroVideoRefreshT = Option<unsafe extern "C" fn(data: *const c_void, width: u32, height: u32, pitch: usize)>;
+type RetroVideoRefreshT =
+    Option<unsafe extern "C" fn(data: *const c_void, width: u32, height: u32, pitch: usize)>;
 type RetroAudioSampleT = Option<unsafe extern "C" fn(left: i16, right: i16)>;
 type RetroInputPollT = Option<unsafe extern "C" fn()>;
-type RetroInputStateT = Option<unsafe extern "C" fn(port: u32, device: u32, index: u32, id: u32) -> i16>;
+type RetroInputStateT =
+    Option<unsafe extern "C" fn(port: u32, device: u32, index: u32, id: u32) -> i16>;
 
 // libretro structs
 #[repr(C)]
-struct RetroSystemInfo {
+pub struct RetroSystemInfo {
     library_name: *const c_char,
     library_version: *const c_char,
     valid_extensions: *const c_char,
@@ -26,7 +28,7 @@ struct RetroSystemInfo {
 }
 
 #[repr(C)]
-struct RetroGameGeometry {
+pub struct RetroGameGeometry {
     base_width: u32,
     base_height: u32,
     max_width: u32,
@@ -35,19 +37,19 @@ struct RetroGameGeometry {
 }
 
 #[repr(C)]
-struct RetroSystemTiming {
+pub struct RetroSystemTiming {
     fps: f64,
     sample_rate: f64,
 }
 
 #[repr(C)]
-struct RetroSystemAvInfo {
+pub struct RetroSystemAvInfo {
     geometry: RetroGameGeometry,
     timing: RetroSystemTiming,
 }
 
 #[repr(C)]
-struct RetroGameInfo {
+pub struct RetroGameInfo {
     path: *const c_char,
     data: *const c_void,
     size: usize,
@@ -106,57 +108,61 @@ pub extern "C" fn retro_set_input_state(_cb: RetroInputStateT) {
     // TODO: Store callback
 }
 
+/// # Safety
+///
+/// `info` must be a valid pointer to a `RetroSystemInfo` struct.
 #[no_mangle]
-pub extern "C" fn retro_get_system_info(info: *mut RetroSystemInfo) {
-    unsafe {
-        (*info).library_name = b"BBKEmu\0".as_ptr() as *const c_char;
-        (*info).library_version = b"0.1.0\0".as_ptr() as *const c_char;
-        (*info).valid_extensions = b"gam\0".as_ptr() as *const c_char;
-        (*info).need_fullpath = false;
-        (*info).block_extract = false;
-    }
+pub unsafe extern "C" fn retro_get_system_info(info: *mut RetroSystemInfo) {
+    (*info).library_name = c"BBKEmu".as_ptr();
+    (*info).library_version = c"0.1.0".as_ptr();
+    (*info).valid_extensions = c"gam".as_ptr();
+    (*info).need_fullpath = false;
+    (*info).block_extract = false;
 }
 
+/// # Safety
+///
+/// `info` must be a valid pointer to a `RetroSystemAvInfo` struct.
 #[no_mangle]
-pub extern "C" fn retro_get_system_av_info(info: *mut RetroSystemAvInfo) {
-    unsafe {
-        (*info).geometry.base_width = 159;
-        (*info).geometry.base_height = 96;
-        (*info).geometry.max_width = 159;
-        (*info).geometry.max_height = 96;
-        (*info).geometry.aspect_ratio = 0.0;
-        (*info).timing.fps = 60.0;
-        (*info).timing.sample_rate = 44100.0;
-    }
+pub unsafe extern "C" fn retro_get_system_av_info(info: *mut RetroSystemAvInfo) {
+    (*info).geometry.base_width = 159;
+    (*info).geometry.base_height = 96;
+    (*info).geometry.max_width = 159;
+    (*info).geometry.max_height = 96;
+    (*info).geometry.aspect_ratio = 0.0;
+    (*info).timing.fps = 60.0;
+    (*info).timing.sample_rate = 44100.0;
 }
 
+/// # Safety
+///
+/// `info` must be a valid pointer to a `RetroGameInfo` struct.
+/// `(*info).data` must be a valid pointer to `(*info).size` bytes of game data.
 #[no_mangle]
-pub extern "C" fn retro_load_game(info: *const RetroGameInfo) -> bool {
-    unsafe {
-        if info.is_null() {
-            return false;
-        }
-        let data = (*info).data as *const u8;
-        let size = (*info).size;
-        if data.is_null() || size == 0 {
-            return false;
-        }
-        let game_data = std::slice::from_raw_parts(data, size);
+pub unsafe extern "C" fn retro_load_game(info: *const RetroGameInfo) -> bool {
+    if info.is_null() {
+        return false;
+    }
+    let data = (*info).data as *const u8;
+    let size = (*info).size;
+    if data.is_null() || size == 0 {
+        return false;
+    }
+    let game_data = std::slice::from_raw_parts(data, size);
 
-        if let Some(ref mut emu) = EMULATOR {
-            match emu.load_gam(game_data) {
-                Ok(()) => {
-                    log::info!("Game loaded successfully");
-                    true
-                }
-                Err(e) => {
-                    log::error!("Failed to load game: {}", e);
-                    false
-                }
+    if let Some(ref mut emu) = EMULATOR {
+        match emu.load_gam(game_data) {
+            Ok(()) => {
+                log::info!("Game loaded successfully");
+                true
             }
-        } else {
-            false
+            Err(e) => {
+                log::error!("Failed to load game: {}", e);
+                false
+            }
         }
+    } else {
+        false
     }
 }
 
@@ -168,6 +174,7 @@ pub extern "C" fn retro_run() {
     unsafe {
         if let Some(ref mut emu) = EMULATOR {
             emu.run_frame();
+            #[allow(static_mut_refs)]
             emu.render_lcd(&mut FRAMEBUFFER, false);
             // TODO: Send video frame via callback
         }

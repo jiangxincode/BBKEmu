@@ -53,6 +53,12 @@ pub struct Debugger {
     pub syscall_logging: bool,
 }
 
+impl Default for Debugger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Debugger {
     pub fn new() -> Self {
         Self {
@@ -85,7 +91,10 @@ impl Debugger {
 
     /// Add a watchpoint
     pub fn add_watchpoint(&mut self, addr: u16, kind: WatchKind) {
-        self.watchpoints.push(Watchpoint { address: addr, kind });
+        self.watchpoints.push(Watchpoint {
+            address: addr,
+            kind,
+        });
         log::info!("Watchpoint added at 0x{:04X} ({:?})", addr, kind);
     }
 
