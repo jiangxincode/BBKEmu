@@ -1,7 +1,7 @@
 # BBKEmu —— BBK Electronic Dictionary Game Emulator
 
 <p align="center">
-  <img src="res/logo-banner.svg" alt="BBKEmu" width="600">
+  <img src="res/logo.svg" alt="BBKEmu" width="300">
 </p>
 
 <p align="center">
