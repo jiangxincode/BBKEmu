@@ -1,46 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="1200" height="400">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1a1a2e"/>
-      <stop offset="50%" stop-color="#16213e"/>
-      <stop offset="100%" stop-color="#0f3460"/>
-    </linearGradient>
-  </defs>
-
-  <!-- Background -->
-  <rect width="1200" height="400" fill="url(#bg)"/>
-
-  <!-- Left side: original logo scaled down -->
-  <g transform="translate(250,200) scale(0.9)">
+  <!-- Left: Device (from logo.svg, scaled and positioned) -->
+  <g transform="translate(200,200) scale(0.8)">
     <!-- White sticker border shape -->
     <path d="M-195,120 C-220,90 -230,40 -215,-10 C-200,-60 -175,-105 -140,-135
-             C-100,-170 -40,-190 35,-190
-             C110,-190 170,-170 210,-135
-             C245,-105 260,-60 255,-10
-             C245,40 230,90 210,120
-             L-195,120 Z"
+             C-100,-170 -40,-190 35,-190 C110,-190 170,-170 210,-135
+             C245,-105 260,-60 255,-10 C245,40 230,90 210,120 L-195,120 Z"
           fill="white" stroke="#1A4B8C" stroke-width="10"/>
 
     <!-- Blue swoosh (left) -->
-    <path d="M-180,110 C-200,80 -205,30 -190,-20
-             C-175,-65 -150,-100 -110,-125
-             C-75,-145 -30,-158 20,-158
-             L10,-140 C-30,-140 -75,-130 -110,-108
-             C-150,-80 -170,-35 -165,10
-             C-160,50 -145,80 -125,95 Z"
-          fill="#0066CC"/>
+    <path d="M-180,110 C-200,80 -205,30 -190,-20 C-175,-65 -150,-100 -110,-125
+             C-75,-145 -30,-158 20,-158 L10,-140 C-30,-140 -75,-130 -110,-108
+             C-150,-80 -170,-35 -165,10 C-160,50 -145,80 -125,95 Z" fill="#0066CC"/>
 
     <!-- Orange swoosh (right) -->
-    <path d="M205,110 C225,80 235,30 225,-20
-             C215,-65 195,-100 160,-125
-             C130,-145 95,-158 60,-158
-             L70,-140 C100,-140 135,-130 165,-108
-             C200,-80 220,-35 225,10
-             C228,50 220,80 200,95 Z"
-          fill="#FF8C00"/>
+    <path d="M205,110 C225,80 235,30 225,-20 C215,-65 195,-100 160,-125
+             C130,-145 95,-158 60,-158 L70,-140 C100,-140 135,-130 165,-108
+             C200,-80 220,-35 225,10 C228,50 220,80 200,95 Z" fill="#FF8C00"/>
 
     <!-- Star sparkle -->
-    <g transform="translate(220,-90)" opacity="0.95">
+    <g transform="translate(220,-90)">
       <path d="M0,-30 L6,-10 L26,-10 L10,4 L16,24 L0,13 L-16,24 L-10,4 L-26,-10 L-6,-10 Z"
             fill="#FFD700" stroke="white" stroke-width="2"/>
     </g>
@@ -52,11 +30,7 @@
 
     <!-- Device body - top half (screen) -->
     <rect x="-130" y="-148" width="260" height="130" rx="10" fill="#E0E0E0" stroke="#AAA" stroke-width="1"/>
-
-    <!-- Screen bezel -->
     <rect x="-115" y="-138" width="200" height="82" rx="5" fill="#222"/>
-
-    <!-- LCD Screen -->
     <rect x="-110" y="-133" width="190" height="72" rx="4" fill="#88AA66"/>
 
     <!-- Screen content lines -->
@@ -69,23 +43,15 @@
       <rect x="-100" y="-77" width="120" height="3.5" fill="#445533" rx="1"/>
       <rect x="-100" y="-68" width="160" height="3.5" fill="#445533" rx="1"/>
     </g>
-
-    <!-- BBK text on screen top -->
     <text x="5" y="-130" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" font-weight="bold" fill="#2255AA" opacity="0.65">步步高</text>
 
     <!-- Speaker holes -->
     <g fill="#AAA">
-      <circle cx="95" cy="-118" r="2.5"/>
-      <circle cx="103" cy="-118" r="2.5"/>
-      <circle cx="95" cy="-110" r="2.5"/>
-      <circle cx="103" cy="-110" r="2.5"/>
-      <circle cx="95" cy="-102" r="2.5"/>
-      <circle cx="103" cy="-102" r="2.5"/>
-      <circle cx="95" cy="-94" r="2.5"/>
-      <circle cx="103" cy="-94" r="2.5"/>
+      <circle cx="95" cy="-118" r="2.5"/><circle cx="103" cy="-118" r="2.5"/>
+      <circle cx="95" cy="-110" r="2.5"/><circle cx="103" cy="-110" r="2.5"/>
+      <circle cx="95" cy="-102" r="2.5"/><circle cx="103" cy="-102" r="2.5"/>
+      <circle cx="95" cy="-94" r="2.5"/><circle cx="103" cy="-94" r="2.5"/>
     </g>
-
-    <!-- Screen bottom label -->
     <text x="0" y="-52" text-anchor="middle" font-family="Arial, sans-serif" font-size="5.5" fill="#888">159×96 LCD</text>
 
     <!-- Device body - bottom half (keyboard) -->
@@ -135,70 +101,32 @@
 
     <!-- Key labels -->
     <g font-family="Arial, sans-serif" font-size="8" fill="white" text-anchor="middle" font-weight="bold">
-      <text x="-112" y="11">A</text>
-      <text x="-81" y="11">B</text>
-      <text x="-50" y="11">C</text>
-      <text x="-19" y="11">D</text>
-      <text x="12" y="11">E</text>
-      <text x="43" y="11">F</text>
-      <text x="74" y="11">G</text>
-      <text x="105" y="11">H</text>
-      <text x="-112" y="34">I</text>
-      <text x="-81" y="34">J</text>
-      <text x="-50" y="34">K</text>
-      <text x="-19" y="34">L</text>
-      <text x="12" y="34">M</text>
-      <text x="43" y="34">N</text>
-      <text x="74" y="34">O</text>
-      <text x="105" y="34">P</text>
-      <text x="-112" y="57">Q</text>
-      <text x="-81" y="57">R</text>
-      <text x="-50" y="57">S</text>
-      <text x="-19" y="57">T</text>
-      <text x="12" y="57">U</text>
-      <text x="43" y="57">V</text>
-      <text x="74" y="57">W</text>
-      <text x="105" y="57">X</text>
-      <text x="-112" y="80">Y</text>
-      <text x="-81" y="80">Z</text>
-      <text x="-50" y="80">0</text>
-      <text x="-19" y="80">1</text>
-      <text x="12" y="80">2</text>
-      <text x="43" y="80">3</text>
-      <text x="74" y="80">4</text>
-      <text x="105" y="80">5</text>
+      <text x="-112" y="11">A</text><text x="-81" y="11">B</text><text x="-50" y="11">C</text><text x="-19" y="11">D</text>
+      <text x="12" y="11">E</text><text x="43" y="11">F</text><text x="74" y="11">G</text><text x="105" y="11">H</text>
+      <text x="-112" y="34">I</text><text x="-81" y="34">J</text><text x="-50" y="34">K</text><text x="-19" y="34">L</text>
+      <text x="12" y="34">M</text><text x="43" y="34">N</text><text x="74" y="34">O</text><text x="105" y="34">P</text>
+      <text x="-112" y="57">Q</text><text x="-81" y="57">R</text><text x="-50" y="57">S</text><text x="-19" y="57">T</text>
+      <text x="12" y="57">U</text><text x="43" y="57">V</text><text x="74" y="57">W</text><text x="105" y="57">X</text>
+      <text x="-112" y="80">Y</text><text x="-81" y="80">Z</text><text x="-50" y="80">0</text><text x="-19" y="80">1</text>
+      <text x="12" y="80">2</text><text x="43" y="80">3</text><text x="74" y="80">4</text><text x="105" y="80">5</text>
     </g>
 
     <!-- Device hinge -->
     <rect x="-130" y="-22" width="260" height="8" rx="3" fill="#BBB" stroke="#999" stroke-width="0.5"/>
-
-    <!-- Text: 步步高 -->
-    <text x="0" y="145" text-anchor="middle" font-family="Arial, sans-serif" font-size="40" font-weight="bold" fill="#1A4B8C" stroke="white" stroke-width="3" paint-order="stroke">步步高</text>
-
-    <!-- Text: BBK -->
-    <text x="-50" y="195" text-anchor="middle" font-family="Arial, sans-serif" font-size="62" font-weight="900" fill="#1A4B8C" stroke="white" stroke-width="4" paint-order="stroke">BBK</text>
-
-    <!-- Text: Emu -->
-    <text x="70" y="195" text-anchor="middle" font-family="Arial, sans-serif" font-size="62" font-weight="900" fill="#FF6600" stroke="white" stroke-width="4" paint-order="stroke">Emu</text>
   </g>
 
-  <!-- Right side: Extended background decoration -->
-  <!-- Blue swoosh extension -->
-  <path d="M500,350 C550,320 600,280 650,250 C700,220 750,200 800,190"
-        fill="none" stroke="#0066CC" stroke-width="8" opacity="0.4" stroke-linecap="round"/>
+  <!-- Right: Text (same style as logo.svg) -->
+  <g transform="translate(480,160)">
+    <!-- 步步高 -->
+    <text x="0" y="0" font-family="Arial, sans-serif" font-size="52" font-weight="bold" fill="#1A4B8C" stroke="white" stroke-width="3" paint-order="stroke">步步高</text>
 
-  <!-- Orange swoosh extension -->
-  <path d="M500,50 C550,80 600,120 650,150 C700,180 750,200 800,210"
-        fill="none" stroke="#FF8C00" stroke-width="8" opacity="0.4" stroke-linecap="round"/>
+    <!-- BBK -->
+    <text x="0" y="85" font-family="Arial, sans-serif" font-size="80" font-weight="900" fill="#1A4B8C" stroke="white" stroke-width="4" paint-order="stroke">BBK</text>
 
-  <!-- Additional decorative circles -->
-  <circle cx="900" cy="200" r="40" fill="none" stroke="#0066CC" stroke-width="2" opacity="0.2"/>
-  <circle cx="950" cy="180" r="30" fill="none" stroke="#FF8C00" stroke-width="2" opacity="0.2"/>
-  <circle cx="1000" cy="200" r="50" fill="none" stroke="#0066CC" stroke-width="2" opacity="0.15"/>
-  <circle cx="1050" cy="220" r="35" fill="none" stroke="#FF8C00" stroke-width="2" opacity="0.15"/>
-  <circle cx="1100" cy="200" r="45" fill="none" stroke="#0066CC" stroke-width="2" opacity="0.1"/>
-  <circle cx="1150" cy="180" r="25" fill="none" stroke="#FF8C00" stroke-width="2" opacity="0.1"/>
+    <!-- Emu -->
+    <text x="260" y="85" font-family="Arial, sans-serif" font-size="80" font-weight="900" fill="#FF6600" stroke="white" stroke-width="4" paint-order="stroke">Emu</text>
 
-  <!-- Subtle text on right -->
-  <text x="850" y="380" font-family="Arial, sans-serif" font-size="14" fill="#4A90D9" opacity="0.3">BBK Electronic Dictionary Game Emulator</text>
+    <!-- Subtitle -->
+    <text x="0" y="130" font-family="Arial, sans-serif" font-size="20" fill="#667788" opacity="0.7">Electronic Dictionary Game Emulator</text>
+  </g>
 </svg>
