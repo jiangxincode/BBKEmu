@@ -97,6 +97,8 @@ BBKEmu can be used as a libretro core with RetroArch.
 - ✅ Game loading (.gam files)
 - ✅ LCD orientation option (portrait/landscape)
 - ✅ CPU/Timer clock rate adjustment
+- ✅ Save states (serialization/deserialization)
+- ✅ SRAM support (flash memory)
 
 ## Building
 

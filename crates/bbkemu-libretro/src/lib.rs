@@ -19,6 +19,10 @@ const RETRO_ENVIRONMENT_SET_VARIABLES: u32 = 16;
 const RETRO_ENVIRONMENT_GET_VARIABLE: u32 = 17;
 const RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE: u32 = 18;
 
+// libretro memory constants
+const RETRO_MEMORY_SAVE_RAM: u32 = 0;
+const RETRO_MEMORY_SYSTEM_RAM: u32 = 2;
+
 // RetroArch keyboard constants
 const RETROK_RETURN: u32 = 13;
 const RETROK_ESCAPE: u32 = 27;
@@ -680,13 +684,38 @@ pub extern "C" fn retro_serialize_size() -> usize {
 }
 
 #[no_mangle]
-pub extern "C" fn retro_serialize(_data: *mut c_void, _size: usize) -> bool {
-    false
+pub extern "C" fn retro_serialize(data: *mut c_void, size: usize) -> bool {
+    let result = panic::catch_unwind(|| unsafe {
+        if let Some(ref emu) = EMULATOR {
+            let state = emu.save_state();
+            let bytes = state.to_bytes();
+            if bytes.len() <= size {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), data as *mut u8, bytes.len());
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    });
+    result.unwrap_or(false)
 }
 
 #[no_mangle]
-pub extern "C" fn retro_unserialize(_data: *const c_void, _size: usize) -> bool {
-    false
+pub extern "C" fn retro_unserialize(data: *const c_void, size: usize) -> bool {
+    let result = panic::catch_unwind(|| unsafe {
+        if let Some(ref mut emu) = EMULATOR {
+            let bytes = std::slice::from_raw_parts(data as *const u8, size);
+            match bbkemu_core::save::SaveState::from_bytes(bytes) {
+                Ok(state) => emu.load_save_state(&state).is_ok(),
+                Err(_) => false,
+            }
+        } else {
+            false
+        }
+    });
+    result.unwrap_or(false)
 }
 
 #[no_mangle]
@@ -716,11 +745,44 @@ pub extern "C" fn retro_get_region() -> u32 {
 }
 
 #[no_mangle]
-pub extern "C" fn retro_get_memory_data(_id: u32) -> *mut c_void {
-    std::ptr::null_mut()
+pub extern "C" fn retro_get_memory_data(id: u32) -> *mut c_void {
+    unsafe {
+        if let Some(ref mut emu) = EMULATOR {
+            match id {
+                RETRO_MEMORY_SAVE_RAM => {
+                    // Return flash memory pointer for save RAM
+                    emu.cpu.memory_mut().flash.as_mut_ptr() as *mut c_void
+                }
+                RETRO_MEMORY_SYSTEM_RAM => {
+                    // Return RAM pointer
+                    emu.cpu.memory_mut().ram.as_mut_ptr() as *mut c_void
+                }
+                _ => std::ptr::null_mut(),
+            }
+        } else {
+            std::ptr::null_mut()
+        }
+    }
 }
 
 #[no_mangle]
-pub extern "C" fn retro_get_memory_size(_id: u32) -> usize {
-    0
+pub extern "C" fn retro_get_memory_size(id: u32) -> usize {
+    #[allow(static_mut_refs)]
+    unsafe {
+        if EMULATOR.is_some() {
+            match id {
+                RETRO_MEMORY_SAVE_RAM => {
+                    // Save area: first 0x14000 bytes of flash
+                    0x14000
+                }
+                RETRO_MEMORY_SYSTEM_RAM => {
+                    // Full RAM size
+                    0x8000
+                }
+                _ => 0,
+            }
+        } else {
+            0
+        }
+    }
 }
