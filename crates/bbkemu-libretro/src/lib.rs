@@ -145,8 +145,17 @@ struct RetroVariable {
 }
 
 /// Core options array for RetroArch
-static CORE_OPTIONS: &[&str] =
-    &["bbkemu_swap_lcd\0Swap LCD Width/Height (Restart)\0portrait;landscape\0"];
+static CORE_OPTIONS: &[&str] = &[
+    "bbkemu_swap_lcd\0Swap LCD Width/Height (Restart)\0portrait;landscape\0",
+    concat!(
+        "bbkemu_cpu_rate\0CPU Clock Rate\0",
+        "0.25;0.50;0.75;1.00;1.50;2.00;3.00;4.00;8.00\0"
+    ),
+    concat!(
+        "bbkemu_timer_rate\0Timer Clock Rate\0",
+        "0.25;0.50;0.75;1.00;1.50;2.00;3.00;4.00;8.00\0"
+    ),
+];
 
 /// Get the system directory from RetroArch
 fn get_system_directory() -> Option<PathBuf> {
@@ -187,6 +196,25 @@ fn load_roms_for_model(emu: &mut Emulator, model: &BbkModel) {
     }
 }
 
+/// Helper function to get a core option value
+unsafe fn get_variable_value(cb: RetroEnvironmentT, key: &str) -> Option<String> {
+    let cb = cb?;
+    let c_key = std::ffi::CString::new(key).ok()?;
+    let mut var = RetroVariable {
+        key: c_key.as_ptr(),
+        value: std::ptr::null(),
+    };
+    if cb(
+        RETRO_ENVIRONMENT_GET_VARIABLE,
+        &mut var as *mut _ as *mut c_void,
+    ) && !var.value.is_null()
+    {
+        let value = CStr::from_ptr(var.value);
+        return value.to_str().ok().map(|s| s.to_string());
+    }
+    None
+}
+
 /// Apply core options from RetroArch to the emulator
 fn apply_core_options(emu: &mut Emulator) {
     unsafe {
@@ -195,21 +223,25 @@ fn apply_core_options(emu: &mut Emulator) {
         };
 
         // Check for swap_lcd option
-        let key = c"bbkemu_swap_lcd".as_ptr();
-        let mut var = RetroVariable {
-            key,
-            value: std::ptr::null(),
-        };
-        if cb(
-            RETRO_ENVIRONMENT_GET_VARIABLE,
-            &mut var as *mut _ as *mut c_void,
-        ) && !var.value.is_null()
-        {
-            let value = CStr::from_ptr(var.value);
-            if value.to_str().ok() == Some("landscape") {
+        if let Some(value) = get_variable_value(Some(cb), "bbkemu_swap_lcd") {
+            if value == "landscape" {
                 emu.set_lcd_orientation(LcdOrientation::Landscape);
             } else {
                 emu.set_lcd_orientation(LcdOrientation::Portrait);
+            }
+        }
+
+        // Check for cpu_rate option
+        if let Some(value) = get_variable_value(Some(cb), "bbkemu_cpu_rate") {
+            if let Ok(rate) = value.parse::<f32>() {
+                emu.set_cpu_rate(rate);
+            }
+        }
+
+        // Check for timer_rate option
+        if let Some(value) = get_variable_value(Some(cb), "bbkemu_timer_rate") {
+            if let Ok(rate) = value.parse::<f32>() {
+                emu.set_timer_rate(rate);
             }
         }
     }

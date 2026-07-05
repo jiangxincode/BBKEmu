@@ -62,6 +62,14 @@ struct Cli {
     /// Swap LCD width and height for landscape display
     #[arg(long)]
     swap_lcd: bool,
+
+    /// CPU clock rate multiplier (0.25 - 8.0)
+    #[arg(long, default_value = "1.0")]
+    cpu_rate: f32,
+
+    /// Timer clock rate multiplier (0.25 - 8.0)
+    #[arg(long, default_value = "1.0")]
+    timer_rate: f32,
 }
 
 fn main() -> Result<()> {
@@ -97,6 +105,13 @@ fn main() -> Result<()> {
         emu.set_lcd_orientation(LcdOrientation::Landscape);
         log::info!("LCD orientation: Landscape (swapped)");
     }
+    emu.set_cpu_rate(cli.cpu_rate);
+    emu.set_timer_rate(cli.timer_rate);
+    log::info!(
+        "CPU rate: {}x, Timer rate: {}x",
+        emu.cpu_rate(),
+        emu.timer_rate()
+    );
     log::info!("Emulator created");
 
     // Load optional ROMs

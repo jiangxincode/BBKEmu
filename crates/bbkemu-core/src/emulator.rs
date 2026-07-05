@@ -28,6 +28,10 @@ pub struct Emulator {
     model: &'static BbkModel,
     /// LCD display orientation
     lcd_orientation: LcdOrientation,
+    /// CPU clock rate multiplier (1.0 = normal speed)
+    cpu_rate: f32,
+    /// Timer clock rate multiplier (1.0 = normal speed)
+    timer_rate: f32,
     /// Whether the emulator is running
     running: bool,
     /// Frame counter
@@ -60,6 +64,8 @@ impl Emulator {
             debug: Debugger::new(),
             model,
             lcd_orientation: LcdOrientation::Portrait,
+            cpu_rate: 1.0,
+            timer_rate: 1.0,
             running: false,
             frame_count: 0,
             timer_cycle_remainder: 0,
@@ -237,18 +243,23 @@ impl Emulator {
     /// Run one frame (~16.67ms at 60fps)
     pub fn run_frame(&mut self) {
         // BBK runs at ~4MHz, 60fps = ~66666 cycles per frame
-        let cycles_per_frame = 66666u32;
+        // Apply CPU rate multiplier
+        let cycles_per_frame = (66666.0 * self.cpu_rate) as u32;
         let mut cycles_run = 0u32;
+
+        // Calculate timer step based on timer rate
+        // Timer ticks every 400 CPU cycles at normal speed
+        let timer_step = (400.0 / self.timer_rate) as u32;
 
         while cycles_run < cycles_per_frame && self.running {
             let halted = self.cpu.memory().ram[0x200] & 0x08 != 0;
             let cycles = if halted { 400 } else { self.step() };
             cycles_run += cycles;
             self.timer_cycle_remainder += cycles;
-            let ticks = self.timer_cycle_remainder / 400;
+            let ticks = self.timer_cycle_remainder / timer_step;
             if ticks > 0 {
                 self.cpu.memory_mut().update_timers(ticks);
-                self.timer_cycle_remainder %= 400;
+                self.timer_cycle_remainder %= timer_step;
             }
         }
 
@@ -435,6 +446,26 @@ impl Emulator {
     /// Get the display height considering orientation
     pub fn display_height(&self) -> usize {
         self.lcd_orientation.height()
+    }
+
+    /// Set CPU clock rate multiplier
+    pub fn set_cpu_rate(&mut self, rate: f32) {
+        self.cpu_rate = rate.clamp(0.25, 8.0);
+    }
+
+    /// Get CPU clock rate multiplier
+    pub fn cpu_rate(&self) -> f32 {
+        self.cpu_rate
+    }
+
+    /// Set timer clock rate multiplier
+    pub fn set_timer_rate(&mut self, rate: f32) {
+        self.timer_rate = rate.clamp(0.25, 8.0);
+    }
+
+    /// Get timer clock rate multiplier
+    pub fn timer_rate(&self) -> f32 {
+        self.timer_rate
     }
 
     /// Render LCD to boolean buffer (true = foreground, false = background)
