@@ -150,6 +150,7 @@ struct RetroVariable {
 
 /// Core options array for RetroArch
 static CORE_OPTIONS: &[&str] = &[
+    "bbkemu_lcd_color\0LCD Color Theme\0grey;green;blue;yellow;random\0",
     "bbkemu_swap_lcd\0Swap LCD Width/Height (Restart)\0portrait;landscape\0",
     concat!(
         "bbkemu_cpu_rate\0CPU Clock Rate\0",
@@ -237,6 +238,19 @@ fn apply_core_options(emu: &mut Emulator) {
             } else {
                 emu.set_lcd_orientation(LcdOrientation::Portrait);
             }
+        }
+
+        // Check for lcd_color option
+        if let Some(value) = get_variable_value(Some(cb), "bbkemu_lcd_color") {
+            use bbkemu_core::lcd::LcdTheme;
+            let theme = match value.as_str() {
+                "green" => LcdTheme::GREEN,
+                "blue" => LcdTheme::BLUE,
+                "yellow" => LcdTheme::YELLOW,
+                "random" => LcdTheme::random(),
+                _ => LcdTheme::GREY,
+            };
+            emu.set_lcd_theme(theme);
         }
 
         // Check for cpu_rate option

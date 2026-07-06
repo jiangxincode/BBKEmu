@@ -32,6 +32,7 @@ impl LcdOrientation {
 }
 
 /// LCD color theme
+#[derive(Clone, Copy)]
 pub struct LcdTheme {
     /// Background color (RGB565)
     pub bg: u16,
@@ -62,6 +63,43 @@ impl LcdTheme {
         fg: 0x2920,
         ghosting: 20,
     };
+
+    /// Generate a random LCD color theme with sufficient contrast.
+    ///
+    /// Ensures each RGB channel of the background is at least 18 units
+    /// brighter than the foreground, matching the hardware LCD behavior.
+    pub fn random() -> Self {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let seed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+
+        // Simple LCG seeded from system time
+        let mut state = seed as u64;
+        let mut next = || {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            ((state >> 33) & 0xFFFF) as u16
+        };
+
+        loop {
+            let bg = next();
+            let fg = next();
+            let bg_r = ((bg >> 11) & 0x1F) as i16;
+            let bg_g = ((bg >> 6) & 0x1F) as i16;
+            let bg_b = (bg & 0x1F) as i16;
+            let fg_r = ((fg >> 11) & 0x1F) as i16;
+            let fg_g = ((fg >> 6) & 0x1F) as i16;
+            let fg_b = (fg & 0x1F) as i16;
+            if bg_r >= fg_r + 18 && bg_g >= fg_g + 18 && bg_b >= fg_b + 18 {
+                return Self {
+                    bg,
+                    fg,
+                    ghosting: 20,
+                };
+            }
+        }
+    }
 }
 
 /// LCD framebuffer

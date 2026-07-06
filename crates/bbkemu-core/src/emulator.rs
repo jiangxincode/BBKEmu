@@ -8,7 +8,7 @@ use crate::cpu::CpuWrapper;
 use crate::debug::Debugger;
 use crate::gam::GamFile;
 use crate::input::{BbkKey, Input};
-use crate::lcd::{Lcd, LcdOrientation};
+use crate::lcd::{Lcd, LcdOrientation, LcdTheme};
 use crate::memory::Memory;
 use crate::model::{BbkModel, MODEL_4980};
 use crate::save::SaveState;
@@ -31,6 +31,8 @@ pub struct Emulator {
     model: &'static BbkModel,
     /// LCD display orientation
     lcd_orientation: LcdOrientation,
+    /// LCD color theme
+    lcd_theme: LcdTheme,
     /// CPU clock rate multiplier (1.0 = normal speed)
     cpu_rate: f32,
     /// Timer clock rate multiplier (1.0 = normal speed)
@@ -68,6 +70,7 @@ impl Emulator {
             cheat: CheatEngine::new(),
             model,
             lcd_orientation: LcdOrientation::Portrait,
+            lcd_theme: LcdTheme::GREY,
             cpu_rate: 1.0,
             timer_rate: 1.0,
             running: false,
@@ -477,6 +480,16 @@ impl Emulator {
         self.lcd_orientation
     }
 
+    /// Set LCD color theme
+    pub fn set_lcd_theme(&mut self, theme: LcdTheme) {
+        self.lcd_theme = theme;
+    }
+
+    /// Get LCD color theme
+    pub fn lcd_theme(&self) -> &LcdTheme {
+        &self.lcd_theme
+    }
+
     /// Get the display width considering orientation
     pub fn display_width(&self) -> usize {
         self.lcd_orientation.width()
@@ -547,8 +560,7 @@ impl Emulator {
 
     /// Render LCD to RGB565 buffer
     pub fn render_lcd(&mut self, buf: &mut [u16], ghosting: bool) {
-        use crate::lcd::LcdTheme;
-        let theme = LcdTheme::GREY;
+        let theme = self.lcd_theme;
 
         self.render_lcd_buffer();
 
@@ -564,8 +576,7 @@ impl Emulator {
 
     /// Render LCD to RGB565 buffer with orientation support
     pub fn render_lcd_with_orientation(&mut self, buf: &mut [u16], ghosting: bool) {
-        use crate::lcd::LcdTheme;
-        let theme = LcdTheme::GREY;
+        let theme = self.lcd_theme;
 
         self.render_lcd_buffer();
 
