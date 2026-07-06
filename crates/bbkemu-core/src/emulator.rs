@@ -379,6 +379,18 @@ impl Emulator {
             self.trigger_interrupt(0x06); // ST4
             return;
         }
+        if (tisr & 0x20) != 0 && (tier & 0x20) != 0 {
+            self.trigger_interrupt(0x11); // MT
+            return;
+        }
+        if (tisr & 0x80) != 0 && (tier & 0x80) != 0 {
+            self.trigger_interrupt(0x10); // GTH
+            return;
+        }
+        if (tisr & 0x40) != 0 && (tier & 0x40) != 0 {
+            self.trigger_interrupt(0x0F); // GTL
+            return;
+        }
 
         // Check for alarm interrupt
         if (isr & 0x01) != 0 && (ier & 0x01) != 0 {
