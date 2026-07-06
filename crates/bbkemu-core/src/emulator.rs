@@ -8,7 +8,7 @@ use crate::cpu::CpuWrapper;
 use crate::debug::Debugger;
 use crate::gam::GamFile;
 use crate::input::{BbkKey, Input};
-use crate::lcd::{Lcd, LcdOrientation};
+use crate::lcd::{Lcd, LcdOrientation, LcdTheme};
 use crate::memory::Memory;
 use crate::model::{BbkModel, MODEL_4980};
 use crate::save::SaveState;
@@ -31,6 +31,8 @@ pub struct Emulator {
     model: &'static BbkModel,
     /// LCD display orientation
     lcd_orientation: LcdOrientation,
+    /// LCD color theme
+    lcd_theme: LcdTheme,
     /// CPU clock rate multiplier (1.0 = normal speed)
     cpu_rate: f32,
     /// Timer clock rate multiplier (1.0 = normal speed)
@@ -68,6 +70,7 @@ impl Emulator {
             cheat: CheatEngine::new(),
             model,
             lcd_orientation: LcdOrientation::Portrait,
+            lcd_theme: LcdTheme::GREY,
             cpu_rate: 1.0,
             timer_rate: 1.0,
             running: false,
@@ -142,8 +145,12 @@ impl Emulator {
         self.cpu.memory_mut().bank_switch.set(0xB, data_bank + 2);
         self.cpu.memory_mut().bank_switch.set(0xC, data_bank + 3);
 
-        // Setup save area
-        let save_base = 0x7000; // 4980
+        // Setup save area (offset differs between models)
+        let save_base = if self.model.bank_sys_d == 0x0E88 {
+            0x8000 // A4988
+        } else {
+            0x7000 // A4980
+        };
         self.cpu.memory_mut().flash[flash_base + save_base + 0xF8] = 0x02;
         self.cpu.memory_mut().flash[flash_base + save_base + 0xF9] = 0x02;
         self.cpu.memory_mut().flash[flash_base + save_base + 0xFA] = 0x02;
@@ -252,9 +259,9 @@ impl Emulator {
             self.cheat.apply_cheats(ram, flash);
         }
 
-        // BBK runs at ~4MHz, 60fps = ~66666 cycles per frame
+        // BBK runs at 4MHz, 60fps = 66666.67 cycles per frame
         // Apply CPU rate multiplier
-        let cycles_per_frame = (66666.0 * self.cpu_rate) as u32;
+        let cycles_per_frame = (4_000_000.0 / 60.0 * self.cpu_rate) as u32;
         let mut cycles_run = 0u32;
 
         // Calculate timer step based on timer rate
@@ -271,6 +278,11 @@ impl Emulator {
                 self.cpu.memory_mut().update_timers(ticks);
                 self.timer_cycle_remainder %= timer_step;
             }
+        }
+
+        // Update RTC once per second (every 60 frames)
+        if self.frame_count.is_multiple_of(60) {
+            self.cpu.memory_mut().update_rtc();
         }
 
         self.frame_count += 1;
@@ -350,13 +362,43 @@ impl Emulator {
             return;
         }
 
-        // Check for keyboard interrupt (PI)
+        // 1. Keyboard interrupt (PI) — highest priority
         if (isr & 0x80) != 0 && (ier & 0x80) != 0 {
             self.cpu.memory_mut().ram[0x04] &= 0x7F; // Clear PI flag
             return;
         }
 
-        // Check for timer interrupts
+        // 2. Alarm interrupt (ALM)
+        if (isr & 0x01) != 0 && (ier & 0x01) != 0 {
+            self.trigger_interrupt(0x13); // ALM
+            return;
+        }
+
+        // 3. Counter interrupt (CT)
+        if (isr & 0x02) != 0 && (ier & 0x02) != 0 {
+            self.trigger_interrupt(0x12); // CT
+            return;
+        }
+
+        // 4. Main timer (MT)
+        if (tisr & 0x20) != 0 && (tier & 0x20) != 0 {
+            self.trigger_interrupt(0x11); // MT
+            return;
+        }
+
+        // 5. General timer high (GTH)
+        if (tisr & 0x80) != 0 && (tier & 0x80) != 0 {
+            self.trigger_interrupt(0x10); // GTH
+            return;
+        }
+
+        // 6. General timer low (GTL)
+        if (tisr & 0x40) != 0 && (tier & 0x40) != 0 {
+            self.trigger_interrupt(0x0F); // GTL
+            return;
+        }
+
+        // 7. Software timer 1 (ST1) — inline counter handling
         if (tisr & 0x01) != 0 && (tier & 0x01) != 0 {
             let ram = &mut self.cpu.memory_mut().ram;
             ram[0x05] &= 0xFE;
@@ -367,6 +409,8 @@ impl Emulator {
             }
             return;
         }
+
+        // 8-10. Software timers 2-4 (ST2-ST4)
         if (tisr & 0x02) != 0 && (tier & 0x02) != 0 {
             self.trigger_interrupt(0x04); // ST2
             return;
@@ -377,18 +421,6 @@ impl Emulator {
         }
         if (tisr & 0x08) != 0 && (tier & 0x08) != 0 {
             self.trigger_interrupt(0x06); // ST4
-            return;
-        }
-
-        // Check for alarm interrupt
-        if (isr & 0x01) != 0 && (ier & 0x01) != 0 {
-            self.trigger_interrupt(0x13); // ALM
-            return;
-        }
-
-        // Check for counter interrupt
-        if (isr & 0x02) != 0 && (ier & 0x02) != 0 {
-            self.trigger_interrupt(0x12); // CT
         }
     }
 
@@ -446,6 +478,16 @@ impl Emulator {
     /// Get LCD display orientation
     pub fn lcd_orientation(&self) -> LcdOrientation {
         self.lcd_orientation
+    }
+
+    /// Set LCD color theme
+    pub fn set_lcd_theme(&mut self, theme: LcdTheme) {
+        self.lcd_theme = theme;
+    }
+
+    /// Get LCD color theme
+    pub fn lcd_theme(&self) -> &LcdTheme {
+        &self.lcd_theme
     }
 
     /// Get the display width considering orientation
@@ -517,39 +559,52 @@ impl Emulator {
     }
 
     /// Render LCD to RGB565 buffer
-    pub fn render_lcd(&mut self, buf: &mut [u16], _ghosting: bool) {
-        let pixels = self.render_lcd_buffer();
+    pub fn render_lcd(&mut self, buf: &mut [u16], ghosting: bool) {
+        let theme = self.lcd_theme;
 
-        // Render with theme
-        use crate::lcd::LcdTheme;
-        let theme = LcdTheme::GREY;
+        self.render_lcd_buffer();
 
-        for i in 0..159 * 96 {
-            buf[i] = if pixels[i] { theme.fg } else { theme.bg };
+        if ghosting {
+            self.lcd.render_with_ghosting(buf, &theme);
+        } else {
+            let pixels = self.lcd.pixels();
+            for i in 0..159 * 96 {
+                buf[i] = if pixels[i] { theme.fg } else { theme.bg };
+            }
         }
     }
 
     /// Render LCD to RGB565 buffer with orientation support
-    pub fn render_lcd_with_orientation(&mut self, buf: &mut [u16], _ghosting: bool) {
-        let pixels = self.render_lcd_buffer();
+    pub fn render_lcd_with_orientation(&mut self, buf: &mut [u16], ghosting: bool) {
+        let theme = self.lcd_theme;
 
-        // Render with theme
-        use crate::lcd::LcdTheme;
-        let theme = LcdTheme::GREY;
+        self.render_lcd_buffer();
 
         match self.lcd_orientation {
             LcdOrientation::Portrait => {
-                for i in 0..159 * 96 {
-                    buf[i] = if pixels[i] { theme.fg } else { theme.bg };
+                if ghosting {
+                    self.lcd.render_with_ghosting(buf, &theme);
+                } else {
+                    let pixels = self.lcd.pixels();
+                    for i in 0..159 * 96 {
+                        buf[i] = if pixels[i] { theme.fg } else { theme.bg };
+                    }
                 }
             }
             LcdOrientation::Landscape => {
-                // Rotate 90 degrees clockwise
+                let mut portrait = [0u16; 159 * 96];
+                if ghosting {
+                    self.lcd.render_with_ghosting(&mut portrait, &theme);
+                } else {
+                    let pixels = self.lcd.pixels();
+                    for i in 0..159 * 96 {
+                        portrait[i] = if pixels[i] { theme.fg } else { theme.bg };
+                    }
+                }
+                // Rotate 90 degrees clockwise: portrait[y*159+x] -> buf[x*96+(95-y)]
                 for y in 0..96 {
                     for x in 0..159 {
-                        let src_idx = y * 159 + x;
-                        let dst_idx = x * 96 + (95 - y);
-                        buf[dst_idx] = if pixels[src_idx] { theme.fg } else { theme.bg };
+                        buf[x * 96 + (95 - y)] = portrait[y * 159 + x];
                     }
                 }
             }
@@ -595,6 +650,8 @@ impl Emulator {
                 selected: self.cpu.memory().bank_switch.selected(),
             },
             bank_sys_d: self.model.bank_sys_d,
+            flash_cmd: self.cpu.memory().flash_cmd(),
+            flash_cycles: self.cpu.memory().flash_cycles(),
         }
     }
 
@@ -605,6 +662,9 @@ impl Emulator {
         self.cpu.memory_mut().flash[..len].copy_from_slice(&state.flash[..len]);
         self.cpu.set_pc(state.cpu.pc);
         self.cpu.set_sp(state.cpu.sp);
+        self.cpu
+            .memory_mut()
+            .set_flash_state(state.flash_cmd, state.flash_cycles);
         Ok(())
     }
 

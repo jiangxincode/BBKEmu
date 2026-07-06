@@ -136,7 +136,7 @@ impl BankSwitch {
 }
 
 /// Flash command state
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 enum FlashCmd {
     Normal,
     ByteProgram,
@@ -426,23 +426,20 @@ impl Memory {
                 };
                 self.flash[actual_addr as usize]
             }
-            FlashCmd::SoftwareId => {
-                // Return software ID
-                match addr {
-                    0x00 => 0x51, // Manufacturer ID
-                    0x01 => 0x52, // Device ID
-                    _ => 0x00,
-                }
-            }
-            FlashCmd::CfiQuery => {
-                // Return CFI query data
-                match addr {
-                    0x10 => 0x51, // 'Q'
-                    0x11 => 0x52, // 'R'
-                    0x12 => 0x59, // 'Y'
-                    0x27 => 0x19, // 2^25 = 32MB
-                    _ => 0x00,
-                }
+            // Software ID and CFI query share the same info table
+            FlashCmd::SoftwareId | FlashCmd::CfiQuery => {
+                // Full CFI/Software ID info block (0x35 bytes)
+                static FLASH_INFO: [u8; 0x35] = [
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x00-0x07
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x08-0x0F
+                    0x51, 0x52, 0x59, 0x01, 0x07, 0x00, 0x00,
+                    0x00, // 0x10-0x17 (QRY + geometry)
+                    0x00, 0x00, 0x00, 0x27, 0x36, 0x00, 0x00, 0x04, // 0x18-0x1F
+                    0x00, 0x04, 0x06, 0x01, 0x00, 0x01, 0x01, 0x15, // 0x20-0x27
+                    0x00, 0x00, 0x00, 0x00, 0x02, 0xFF, 0x01, 0x10, // 0x28-0x2F
+                    0x00, 0x1F, 0x00, 0x00, 0x01, // 0x30-0x34
+                ];
+                FLASH_INFO.get(addr as usize).copied().unwrap_or(0x00)
             }
         }
     }
@@ -567,6 +564,86 @@ impl Memory {
                 }
             }
         }
+
+        // Counter timer (CT): controlled by STCTCON bit 4
+        let stctcon = self.ram[registers::STCTCON as usize];
+        if (stctcon & 0x10) != 0 {
+            self.timer_counters[4] += ticks;
+            if self.timer_counters[4] >= 0x1000 {
+                self.timer_counters[4] = self.ram[registers::CTLD as usize] as u32;
+                if (self.ram[registers::IER as usize] & 0x02) != 0 {
+                    self.ram[registers::ISR as usize] |= 0x02;
+                    self.ram[registers::SYSCON as usize] &= 0xF7;
+                }
+            }
+        }
+    }
+
+    /// Advance real-time clock by one second.
+    ///
+    /// Called once per second (every 60 frames at 60 FPS).
+    /// Controlled by STCTCON bit 6 (RTC enable); alarm matching by bit 5.
+    pub fn update_rtc(&mut self) {
+        let stctcon = self.ram[registers::STCTCON as usize];
+        if (stctcon & 0x40) == 0 {
+            return;
+        }
+
+        // Increment seconds; cascade overflows through minutes, hours, days
+        if self.ram[registers::RTCSEC as usize] < 59 {
+            self.ram[registers::RTCSEC as usize] += 1;
+        } else {
+            self.ram[registers::RTCSEC as usize] = 0;
+            if self.ram[registers::RTCMIN as usize] < 59 {
+                self.ram[registers::RTCMIN as usize] += 1;
+            } else {
+                self.ram[registers::RTCMIN as usize] = 0;
+                if self.ram[registers::RTCHR as usize] < 23 {
+                    self.ram[registers::RTCHR as usize] += 1;
+                } else {
+                    self.ram[registers::RTCHR as usize] = 0;
+                    // 16-bit day counter split across RTCDAYL/RTCDAYH
+                    let (day_l, overflow) =
+                        self.ram[registers::RTCDAYL as usize].overflowing_add(1);
+                    self.ram[registers::RTCDAYL as usize] = day_l;
+                    if overflow {
+                        self.ram[registers::RTCDAYH as usize] =
+                            (self.ram[registers::RTCDAYH as usize] + 1) & 0x01;
+                    }
+                }
+            }
+        }
+
+        // Alarm matching: check when STCTCON bit 5 is set
+        if (stctcon & 0x20) != 0
+            && self.ram[registers::RTCMIN as usize] == self.ram[registers::ALMMIN as usize]
+            && self.ram[registers::RTCHR as usize] == self.ram[registers::ALMHR as usize]
+            && self.ram[registers::RTCDAYL as usize] == self.ram[registers::ALMDAYL as usize]
+            && self.ram[registers::RTCDAYH as usize] == self.ram[registers::ALMDAYH as usize]
+        {
+            self.ram[registers::ISR as usize] |= 0x01;
+        }
+    }
+
+    /// Get flash command state for save states
+    pub fn flash_cmd(&self) -> u8 {
+        self.flash_cmd as u8
+    }
+
+    /// Get flash command cycles for save states
+    pub fn flash_cycles(&self) -> u8 {
+        self.flash_cycles
+    }
+
+    /// Restore flash command state from save state
+    pub fn set_flash_state(&mut self, cmd: u8, cycles: u8) {
+        self.flash_cmd = match cmd {
+            1 => FlashCmd::ByteProgram,
+            2 => FlashCmd::SoftwareId,
+            3 => FlashCmd::CfiQuery,
+            _ => FlashCmd::Normal,
+        };
+        self.flash_cycles = cycles;
     }
 
     /// Get RAM slice for save states
