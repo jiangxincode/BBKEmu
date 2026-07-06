@@ -567,6 +567,19 @@ impl Memory {
                 }
             }
         }
+
+        // Counter timer (CT): controlled by STCTCON bit 4
+        let stctcon = self.ram[registers::STCTCON as usize];
+        if (stctcon & 0x10) != 0 {
+            self.timer_counters[4] += ticks;
+            if self.timer_counters[4] >= 0x1000 {
+                self.timer_counters[4] = self.ram[registers::CTLD as usize] as u32;
+                if (self.ram[registers::IER as usize] & 0x02) != 0 {
+                    self.ram[registers::ISR as usize] |= 0x02;
+                    self.ram[registers::SYSCON as usize] &= 0xF7;
+                }
+            }
+        }
     }
 
     /// Get RAM slice for save states
