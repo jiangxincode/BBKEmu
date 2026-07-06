@@ -359,13 +359,43 @@ impl Emulator {
             return;
         }
 
-        // Check for keyboard interrupt (PI)
+        // 1. Keyboard interrupt (PI) — highest priority
         if (isr & 0x80) != 0 && (ier & 0x80) != 0 {
             self.cpu.memory_mut().ram[0x04] &= 0x7F; // Clear PI flag
             return;
         }
 
-        // Check for timer interrupts
+        // 2. Alarm interrupt (ALM)
+        if (isr & 0x01) != 0 && (ier & 0x01) != 0 {
+            self.trigger_interrupt(0x13); // ALM
+            return;
+        }
+
+        // 3. Counter interrupt (CT)
+        if (isr & 0x02) != 0 && (ier & 0x02) != 0 {
+            self.trigger_interrupt(0x12); // CT
+            return;
+        }
+
+        // 4. Main timer (MT)
+        if (tisr & 0x20) != 0 && (tier & 0x20) != 0 {
+            self.trigger_interrupt(0x11); // MT
+            return;
+        }
+
+        // 5. General timer high (GTH)
+        if (tisr & 0x80) != 0 && (tier & 0x80) != 0 {
+            self.trigger_interrupt(0x10); // GTH
+            return;
+        }
+
+        // 6. General timer low (GTL)
+        if (tisr & 0x40) != 0 && (tier & 0x40) != 0 {
+            self.trigger_interrupt(0x0F); // GTL
+            return;
+        }
+
+        // 7. Software timer 1 (ST1) — inline counter handling
         if (tisr & 0x01) != 0 && (tier & 0x01) != 0 {
             let ram = &mut self.cpu.memory_mut().ram;
             ram[0x05] &= 0xFE;
@@ -376,6 +406,8 @@ impl Emulator {
             }
             return;
         }
+
+        // 8-10. Software timers 2-4 (ST2-ST4)
         if (tisr & 0x02) != 0 && (tier & 0x02) != 0 {
             self.trigger_interrupt(0x04); // ST2
             return;
@@ -386,30 +418,6 @@ impl Emulator {
         }
         if (tisr & 0x08) != 0 && (tier & 0x08) != 0 {
             self.trigger_interrupt(0x06); // ST4
-            return;
-        }
-        if (tisr & 0x20) != 0 && (tier & 0x20) != 0 {
-            self.trigger_interrupt(0x11); // MT
-            return;
-        }
-        if (tisr & 0x80) != 0 && (tier & 0x80) != 0 {
-            self.trigger_interrupt(0x10); // GTH
-            return;
-        }
-        if (tisr & 0x40) != 0 && (tier & 0x40) != 0 {
-            self.trigger_interrupt(0x0F); // GTL
-            return;
-        }
-
-        // Check for alarm interrupt
-        if (isr & 0x01) != 0 && (ier & 0x01) != 0 {
-            self.trigger_interrupt(0x13); // ALM
-            return;
-        }
-
-        // Check for counter interrupt
-        if (isr & 0x02) != 0 && (ier & 0x02) != 0 {
-            self.trigger_interrupt(0x12); // CT
         }
     }
 
