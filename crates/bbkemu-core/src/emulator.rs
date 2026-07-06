@@ -256,9 +256,9 @@ impl Emulator {
             self.cheat.apply_cheats(ram, flash);
         }
 
-        // BBK runs at ~4MHz, 60fps = ~66666 cycles per frame
+        // BBK runs at 4MHz, 60fps = 66666.67 cycles per frame
         // Apply CPU rate multiplier
-        let cycles_per_frame = (66666.0 * self.cpu_rate) as u32;
+        let cycles_per_frame = (4_000_000.0 / 60.0 * self.cpu_rate) as u32;
         let mut cycles_run = 0u32;
 
         // Calculate timer step based on timer rate
