@@ -142,8 +142,12 @@ impl Emulator {
         self.cpu.memory_mut().bank_switch.set(0xB, data_bank + 2);
         self.cpu.memory_mut().bank_switch.set(0xC, data_bank + 3);
 
-        // Setup save area
-        let save_base = 0x7000; // 4980
+        // Setup save area (offset differs between models)
+        let save_base = if self.model.bank_sys_d == 0x0E88 {
+            0x8000 // A4988
+        } else {
+            0x7000 // A4980
+        };
         self.cpu.memory_mut().flash[flash_base + save_base + 0xF8] = 0x02;
         self.cpu.memory_mut().flash[flash_base + save_base + 0xF9] = 0x02;
         self.cpu.memory_mut().flash[flash_base + save_base + 0xFA] = 0x02;
