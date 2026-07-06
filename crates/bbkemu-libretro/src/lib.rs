@@ -558,7 +558,12 @@ pub unsafe extern "C" fn retro_load_game(info: *const RetroGameInfo) -> bool {
                 );
             }
 
-            emu.load_gam(game_data).is_ok()
+            let result = emu.load_gam(game_data);
+            if result.is_ok() {
+                // Apply model-specific joypad remapping after game is loaded
+                apply_joypad_remapping_for_model(emu.model());
+            }
+            result.is_ok()
         } else {
             false
         }
@@ -576,8 +581,8 @@ pub unsafe extern "C" fn retro_load_game(info: *const RetroGameInfo) -> bool {
 #[no_mangle]
 pub extern "C" fn retro_unload_game() {}
 
-/// Joypad button to BBK key mapping
-const JOYK: [BbkKey; 16] = [
+/// Default joypad button to BBK key mapping (A4980)
+static mut JOYK: [BbkKey; 16] = [
     BbkKey::Exit,   // RETRO_DEVICE_ID_JOYPAD_B (0) -> EXIT
     BbkKey::Help,   // RETRO_DEVICE_ID_JOYPAD_Y (1) -> HELP
     BbkKey::Insert, // RETRO_DEVICE_ID_JOYPAD_SELECT (2) -> INSERT
@@ -595,6 +600,19 @@ const JOYK: [BbkKey; 16] = [
     BbkKey::A,      // RETRO_DEVICE_ID_JOYPAD_L3 (14) -> A
     BbkKey::Z,      // RETRO_DEVICE_ID_JOYPAD_R3 (15) -> Z
 ];
+
+/// Apply A4988-specific joypad remapping
+unsafe fn apply_joypad_remapping_for_model(model: &BbkModel) {
+    if model.bank_sys_d == 0x0E88 {
+        // A4988 has a different keyboard layout
+        JOYK[1] = BbkKey::Z; // Y -> Z
+        JOYK[2] = BbkKey::Del; // SELECT -> DEL (SHIFT on A4988)
+        JOYK[3] = BbkKey::Zy; // START -> ZY
+        JOYK[12] = BbkKey::Space; // L2 -> SPACE
+        JOYK[13] = BbkKey::X; // R2 -> X
+        JOYK[15] = BbkKey::S; // R3 -> S
+    }
+}
 
 /// Static state for joypad input handling
 static mut JOYPAD_PRESSED: i32 = -1;
