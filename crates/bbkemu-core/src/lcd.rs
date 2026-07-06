@@ -236,6 +236,11 @@ impl Lcd {
         }
     }
 
+    /// Get pixel buffer reference
+    pub fn pixels(&self) -> &[bool; FRAMEBUFFER_SIZE] {
+        &self.pixels
+    }
+
     /// Check if display has been updated
     pub fn is_dirty(&self) -> bool {
         self.dirty

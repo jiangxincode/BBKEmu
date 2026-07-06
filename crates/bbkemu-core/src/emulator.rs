@@ -534,39 +534,54 @@ impl Emulator {
     }
 
     /// Render LCD to RGB565 buffer
-    pub fn render_lcd(&mut self, buf: &mut [u16], _ghosting: bool) {
-        let pixels = self.render_lcd_buffer();
-
-        // Render with theme
+    pub fn render_lcd(&mut self, buf: &mut [u16], ghosting: bool) {
         use crate::lcd::LcdTheme;
         let theme = LcdTheme::GREY;
 
-        for i in 0..159 * 96 {
-            buf[i] = if pixels[i] { theme.fg } else { theme.bg };
+        self.render_lcd_buffer();
+
+        if ghosting {
+            self.lcd.render_with_ghosting(buf, &theme);
+        } else {
+            let pixels = self.lcd.pixels();
+            for i in 0..159 * 96 {
+                buf[i] = if pixels[i] { theme.fg } else { theme.bg };
+            }
         }
     }
 
     /// Render LCD to RGB565 buffer with orientation support
-    pub fn render_lcd_with_orientation(&mut self, buf: &mut [u16], _ghosting: bool) {
-        let pixels = self.render_lcd_buffer();
-
-        // Render with theme
+    pub fn render_lcd_with_orientation(&mut self, buf: &mut [u16], ghosting: bool) {
         use crate::lcd::LcdTheme;
         let theme = LcdTheme::GREY;
 
+        self.render_lcd_buffer();
+
         match self.lcd_orientation {
             LcdOrientation::Portrait => {
-                for i in 0..159 * 96 {
-                    buf[i] = if pixels[i] { theme.fg } else { theme.bg };
+                if ghosting {
+                    self.lcd.render_with_ghosting(buf, &theme);
+                } else {
+                    let pixels = self.lcd.pixels();
+                    for i in 0..159 * 96 {
+                        buf[i] = if pixels[i] { theme.fg } else { theme.bg };
+                    }
                 }
             }
             LcdOrientation::Landscape => {
-                // Rotate 90 degrees clockwise
+                let mut portrait = [0u16; 159 * 96];
+                if ghosting {
+                    self.lcd.render_with_ghosting(&mut portrait, &theme);
+                } else {
+                    let pixels = self.lcd.pixels();
+                    for i in 0..159 * 96 {
+                        portrait[i] = if pixels[i] { theme.fg } else { theme.bg };
+                    }
+                }
+                // Rotate 90 degrees clockwise: portrait[y*159+x] -> buf[x*96+(95-y)]
                 for y in 0..96 {
                     for x in 0..159 {
-                        let src_idx = y * 159 + x;
-                        let dst_idx = x * 96 + (95 - y);
-                        buf[dst_idx] = if pixels[src_idx] { theme.fg } else { theme.bg };
+                        buf[x * 96 + (95 - y)] = portrait[y * 159 + x];
                     }
                 }
             }
