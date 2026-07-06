@@ -136,7 +136,7 @@ impl BankSwitch {
 }
 
 /// Flash command state
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 enum FlashCmd {
     Normal,
     ByteProgram,
@@ -626,6 +626,27 @@ impl Memory {
         {
             self.ram[registers::ISR as usize] |= 0x01;
         }
+    }
+
+    /// Get flash command state for save states
+    pub fn flash_cmd(&self) -> u8 {
+        self.flash_cmd as u8
+    }
+
+    /// Get flash command cycles for save states
+    pub fn flash_cycles(&self) -> u8 {
+        self.flash_cycles
+    }
+
+    /// Restore flash command state from save state
+    pub fn set_flash_state(&mut self, cmd: u8, cycles: u8) {
+        self.flash_cmd = match cmd {
+            1 => FlashCmd::ByteProgram,
+            2 => FlashCmd::SoftwareId,
+            3 => FlashCmd::CfiQuery,
+            _ => FlashCmd::Normal,
+        };
+        self.flash_cycles = cycles;
     }
 
     /// Get RAM slice for save states

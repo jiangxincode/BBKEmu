@@ -16,6 +16,10 @@ pub struct SaveState {
     pub bank_switch: BankState,
     /// Model identifier
     pub bank_sys_d: u16,
+    /// Flash command state (FlashCmd enum value)
+    pub flash_cmd: u8,
+    /// Flash command cycle counter
+    pub flash_cycles: u8,
 }
 
 /// CPU state for serialization

@@ -631,6 +631,8 @@ impl Emulator {
                 selected: self.cpu.memory().bank_switch.selected(),
             },
             bank_sys_d: self.model.bank_sys_d,
+            flash_cmd: self.cpu.memory().flash_cmd(),
+            flash_cycles: self.cpu.memory().flash_cycles(),
         }
     }
 
@@ -641,6 +643,9 @@ impl Emulator {
         self.cpu.memory_mut().flash[..len].copy_from_slice(&state.flash[..len]);
         self.cpu.set_pc(state.cpu.pc);
         self.cpu.set_sp(state.cpu.sp);
+        self.cpu
+            .memory_mut()
+            .set_flash_state(state.flash_cmd, state.flash_cycles);
         Ok(())
     }
 
