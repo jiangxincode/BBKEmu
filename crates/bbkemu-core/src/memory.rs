@@ -426,23 +426,20 @@ impl Memory {
                 };
                 self.flash[actual_addr as usize]
             }
-            FlashCmd::SoftwareId => {
-                // Return software ID
-                match addr {
-                    0x00 => 0x51, // Manufacturer ID
-                    0x01 => 0x52, // Device ID
-                    _ => 0x00,
-                }
-            }
-            FlashCmd::CfiQuery => {
-                // Return CFI query data
-                match addr {
-                    0x10 => 0x51, // 'Q'
-                    0x11 => 0x52, // 'R'
-                    0x12 => 0x59, // 'Y'
-                    0x27 => 0x19, // 2^25 = 32MB
-                    _ => 0x00,
-                }
+            // Software ID and CFI query share the same info table
+            FlashCmd::SoftwareId | FlashCmd::CfiQuery => {
+                // Full CFI/Software ID info block (0x35 bytes)
+                static FLASH_INFO: [u8; 0x35] = [
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x00-0x07
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x08-0x0F
+                    0x51, 0x52, 0x59, 0x01, 0x07, 0x00, 0x00,
+                    0x00, // 0x10-0x17 (QRY + geometry)
+                    0x00, 0x00, 0x00, 0x27, 0x36, 0x00, 0x00, 0x04, // 0x18-0x1F
+                    0x00, 0x04, 0x06, 0x01, 0x00, 0x01, 0x01, 0x15, // 0x20-0x27
+                    0x00, 0x00, 0x00, 0x00, 0x02, 0xFF, 0x01, 0x10, // 0x28-0x2F
+                    0x00, 0x1F, 0x00, 0x00, 0x01, // 0x30-0x34
+                ];
+                FLASH_INFO.get(addr as usize).copied().unwrap_or(0x00)
             }
         }
     }
