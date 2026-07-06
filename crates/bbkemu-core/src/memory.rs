@@ -582,6 +582,52 @@ impl Memory {
         }
     }
 
+    /// Advance real-time clock by one second.
+    ///
+    /// Called once per second (every 60 frames at 60 FPS).
+    /// Controlled by STCTCON bit 6 (RTC enable); alarm matching by bit 5.
+    pub fn update_rtc(&mut self) {
+        let stctcon = self.ram[registers::STCTCON as usize];
+        if (stctcon & 0x40) == 0 {
+            return;
+        }
+
+        // Increment seconds; cascade overflows through minutes, hours, days
+        if self.ram[registers::RTCSEC as usize] < 59 {
+            self.ram[registers::RTCSEC as usize] += 1;
+        } else {
+            self.ram[registers::RTCSEC as usize] = 0;
+            if self.ram[registers::RTCMIN as usize] < 59 {
+                self.ram[registers::RTCMIN as usize] += 1;
+            } else {
+                self.ram[registers::RTCMIN as usize] = 0;
+                if self.ram[registers::RTCHR as usize] < 23 {
+                    self.ram[registers::RTCHR as usize] += 1;
+                } else {
+                    self.ram[registers::RTCHR as usize] = 0;
+                    // 16-bit day counter split across RTCDAYL/RTCDAYH
+                    let (day_l, overflow) =
+                        self.ram[registers::RTCDAYL as usize].overflowing_add(1);
+                    self.ram[registers::RTCDAYL as usize] = day_l;
+                    if overflow {
+                        self.ram[registers::RTCDAYH as usize] =
+                            (self.ram[registers::RTCDAYH as usize] + 1) & 0x01;
+                    }
+                }
+            }
+        }
+
+        // Alarm matching: check when STCTCON bit 5 is set
+        if (stctcon & 0x20) != 0
+            && self.ram[registers::RTCMIN as usize] == self.ram[registers::ALMMIN as usize]
+            && self.ram[registers::RTCHR as usize] == self.ram[registers::ALMHR as usize]
+            && self.ram[registers::RTCDAYL as usize] == self.ram[registers::ALMDAYL as usize]
+            && self.ram[registers::RTCDAYH as usize] == self.ram[registers::ALMDAYH as usize]
+        {
+            self.ram[registers::ISR as usize] |= 0x01;
+        }
+    }
+
     /// Get RAM slice for save states
     pub fn ram(&self) -> &[u8] {
         &self.ram

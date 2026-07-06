@@ -273,6 +273,11 @@ impl Emulator {
             }
         }
 
+        // Update RTC once per second (every 60 frames)
+        if self.frame_count.is_multiple_of(60) {
+            self.cpu.memory_mut().update_rtc();
+        }
+
         self.frame_count += 1;
     }
 
