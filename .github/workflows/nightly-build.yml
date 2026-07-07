@@ -121,7 +121,7 @@ jobs:
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../${{ matrix.artifact }}.tar.gz bbkemu
+          tar czf ../../../${{ matrix.artifact }}.tar.gz bbkemu-emu
           cd ../../..
 
       - name: Package (Windows)
@@ -129,7 +129,7 @@ jobs:
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
-          7z a ../../../${{ matrix.artifact }}.zip bbkemu.exe
+          7z a ../../../${{ matrix.artifact }}.zip bbkemu-emu.exe
           cd ../../..
 
       - name: Upload artifact
