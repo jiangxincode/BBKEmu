@@ -13,7 +13,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-BSD%203--Clause-blue.svg" alt="License: BSD 3-Clause"></a>
 </p>
 
-BBK (步步高) A-series electronic dictionary game emulator written in Rust.
+BBK (步步高) A-series electronic dictionary game emulator written in Rust. Plays `.gam` game files from BBK A4980 and A4988 dictionaries.
 
 ## Features
 
@@ -43,68 +43,50 @@ These files are not distributed with the emulator and must be obtained separatel
 
 Download the latest binary from the [Releases](https://github.com/jiangxincode/BBKEmu/releases) page.
 
+The basic usage is listed below, but there are many more options for controlling the behavior of the emulator. See the [Command-line Options](docs/CLI-Options.md) documentation for the full list of options.
+
 ```bash
 # Basic usage with ROM files
 bbkemu game.gam -8 8.BIN -e E.BIN
 
-# With options
-bbkemu game.gam -8 8.BIN -e E.BIN --scale 4 --model 4980 --debug --fullscreen
-
 # If ROM files are in system/BBKEmu/<model>/
 bbkemu game.gam
+
+# With common options
+bbkemu game.gam --scale 4 --fullscreen --model 4980
+
+# Headless mode for testing
+bbkemu game.gam --frames 100 --output screenshot.png
 ```
 
-**Command-line options:**
+**Keyboard shortcuts:** `F5` Save state | `F8` Load state | `F12` Screenshot | `Escape` Exit
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `<GAME>` | GAM file to load | (required) |
-| `-8, --rom8 <FILE>` | Font ROM file (8.BIN) | none |
-| `-e, --rome <FILE>` | OS ROM file (E.BIN) | none |
-| `-s, --scale <N>` | Display scale factor (1-16) | 4 |
-| `-f, --fullscreen` | Start in fullscreen mode | false |
-| `-m, --model <MODEL>` | BBK model (4980, 4988) | 4980 |
-| `-d, --debug` | Enable debug logging | false |
-| `-o, --output <FILE>` | Output PNG file path | output.png |
-| `--frames <N>` | Run headless for N frames and exit | none |
-| `--swap-lcd` | Swap LCD width/height for landscape display | false |
-| `--cpu-rate <RATE>` | CPU clock rate multiplier (0.25-8.0) | 1.0 |
-| `--timer-rate <RATE>` | Timer clock rate multiplier (0.25-8.0) | 1.0 |
-| `--key-repeat-interval <MS>` | Minimum key repeat interval in ms (0 = no limit) | 0 |
-| `--cheat <CODE>` | Cheat code (format: AAAAAAVV, can specify multiple) | none |
-| `-S, --screenshot <PATH>` | Take a screenshot after N frames and exit (saves as PNG) | none |
-| `--screenshot-frames <N>` | Number of frames to run before taking screenshot | 30 |
+### RetroArch Mode (Desktop: Windows / Linux / macOS)
 
-**Keyboard shortcuts:**
+BBKEmu can be used as a libretro core with RetroArch, allowing you to play BBK games with RetroArch's features like shaders and save states.
 
-| Key | Action |
-|-----|--------|
-| `F5` | Save state |
-| `F8` | Load state |
-| `F12` | Take screenshot |
-| `Escape` | Exit emulator |
+**Install the core** — choose one of the following methods:
 
-### RetroArch Mode
-
-BBKEmu can be used as a libretro core with RetroArch.
-
-**Install the core:**
-
-1. Build the libretro core:
-   ```bash
-   cargo build --release -p bbkemu-libretro
-   ```
-2. Copy the core file to RetroArch's `cores/` directory:
-   - Windows: `target/release/bbkemu_libretro.dll`
-   - Linux: `target/release/libbbkemu_libretro.so`
-   - macOS: `target/release/libbbkemu_libretro.dylib`
-3. Place ROM files in `system/BBKEmu/<model>/` directory (e.g., `system/BBKEmu/A4980/`)
+- **Online Updater**: Open RetroArch → **Main Menu → Online Updater → Core Downloader** → select **BBKEmu**
+- **Manual**: Download the core from the [Releases](https://github.com/jiangxincode/BBKEmu/releases) page, copy `bbkemu_libretro.dll` (or `.so`/`.dylib`) to RetroArch's `cores/` directory, and `bbkemu_libretro.info` to the `info/` directory
 
 **Load the core in RetroArch:**
 
 1. Open RetroArch
 2. Select "Load Core" → "BBKEmu"
 3. Select "Load Content" and choose a `.gam` game file
+4. ROM files should be placed in `system/BBKEmu/<model>/` (e.g., `system/BBKEmu/A4980/`)
+
+#### RetroArch on Android
+
+The libretro core also runs on Android and can be reused by most Android
+RetroArch-based frontends. See [Android Libretro Core](docs/Android-Libretro-Core.md)
+for install and build instructions.
+
+#### RetroArch on iOS
+
+The libretro core also runs on iOS (iPhone / iPad). iOS currently requires manual core injection — see
+[iOS Libretro Core](docs/iOS-Libretro-Core.md) for install and build instructions.
 
 #### Supported Features
 
@@ -112,11 +94,27 @@ BBKEmu can be used as a libretro core with RetroArch.
 - ✅ Audio output (tone generation)
 - ✅ Input handling (keyboard mapping)
 - ✅ Game loading (.gam files)
+- ✅ Save states
 - ✅ LCD orientation option (portrait/landscape)
 - ✅ CPU/Timer clock rate adjustment
-- ✅ Save states (serialization/deserialization)
 - ✅ SRAM support (flash memory)
 - ✅ Cheat codes support
+
+#### Core Options
+
+Configurable from RetroArch's *Quick Menu → Core Options* (LCD orientation,
+CPU/Timer clock rate, key repeat interval). See [Core Options](docs/Core-Options.md) for the full list.
+
+#### RetroPad Button Mapping
+
+| RetroPad Button | BBK Key | Action |
+|----------------|---------|--------|
+| D-Pad Left | Left | Navigate left |
+| D-Pad Right | Right | Navigate right |
+| D-Pad Up | Up | Navigate up |
+| D-Pad Down | Down | Navigate down |
+| A | Enter | Confirm |
+| B | Exit | Back / Cancel |
 
 ## Building
 
@@ -126,35 +124,10 @@ Requires [Rust](https://www.rust-lang.org/tools/install) (stable).
 
 ```bash
 cargo build -p bbkemu --release
-cargo run -p bbkemu --release -- game.gam -8 8.BIN -e E.BIN
+cargo run -p bbkemu --release -- game.gam
 ```
 
 The binary is produced at `target/release/bbkemu` (or `bbkemu.exe` on Windows).
-
-### Usage Examples
-
-```bash
-# Run game with GUI
-bbkemu game.gam -8 8.BIN -e E.BIN
-
-# Run headless for 100 frames and save screenshot
-bbkemu game.gam --frames 100 --output screenshot.png
-
-# Take screenshot after 30 frames (default) and exit
-bbkemu game.gam --screenshot screenshot.png
-
-# Take screenshot after 60 frames and exit
-bbkemu game.gam -S screenshot.png --screenshot-frames 60
-
-# Run in landscape mode with 2x scale
-bbkemu game.gam --swap-lcd --scale 2
-
-# Run with CPU at 2x speed
-bbkemu game.gam --cpu-rate 2.0
-
-# Run with cheat codes
-bbkemu game.gam --cheat 00100A05 --cheat 00200BFF
-```
 
 ### Libretro Core (for RetroArch)
 
@@ -167,28 +140,10 @@ on Windows (`libbbkemu.so` on Linux, `libbbkemu.dylib` on macOS) under
 `target/release/`. Rename it to `bbkemu_libretro.<ext>` before dropping it into
 RetroArch's `cores/` directory.
 
-**Core Options:**
-
-In RetroArch, you can configure the following options under "Quick Menu" → "Core Options":
-
-| Option | Description | Values |
-|--------|-------------|--------|
-| Swap LCD Width/Height | Swap display dimensions for landscape orientation | portrait, landscape |
-| CPU Clock Rate | CPU speed multiplier | 0.25, 0.50, 0.75, 1.00, 1.50, 2.00, 3.00, 4.00, 8.00 |
-| Timer Clock Rate | Timer speed multiplier | 0.25, 0.50, 0.75, 1.00, 1.50, 2.00, 3.00, 4.00, 8.00 |
-| Key Repeat Interval | Minimum interval between repeated key presses (ms) | 0, 50, 100, 150, 200, 250, 300, 400, 500 |
-
-### ROM Analyzer Tool
-
-```bash
-cargo build -p bbkemu-rom-analyzer --release
-```
-
-This tool analyzes BBK OS ROM files for emulation development and debugging.
+For Android cross-compilation, see [Android Libretro Core](docs/Android-Libretro-Core.md).
+For iOS, see [iOS Libretro Core](docs/iOS-Libretro-Core.md).
 
 ## Testing
-
-### Unit Tests
 
 Run the unit tests:
 
@@ -196,31 +151,15 @@ Run the unit tests:
 cargo test --workspace
 ```
 
-### Smoke Tests
-
-Smoke tests verify that all games load and run without panicking. These tests require game assets and ROM files, so they are marked as `#[ignore]` and must be run explicitly.
-
-**Prerequisites:**
-- Game files (`.gam`) in `tmp/games/`
-- ROM files (`8.BIN`, `E.BIN`) in `tmp/roms/4980/`
-
-**Run smoke tests:**
+There is also a smoke test that loads every available game, runs it for a number
+of frames, and checks that the emulator neither panics nor produces a blank
+frame. It needs the (non-distributed) game assets, so it is `#[ignore]`d by
+default and run on demand:
 
 ```bash
-# Basic smoke test: load all games and check for panics (600 frames)
-cargo test -p bbkemu-core --test smoke smoke_all_games -- --ignored --nocapture
-
-# Screenshot test: generate BMP screenshots for visual inspection (600 frames)
-cargo test -p bbkemu-core --test smoke smoke_screenshot_all_games -- --ignored --nocapture
+# Uses <repo>/tmp/games by default, or set BBK_GAME_DIR
+cargo test -p bbkemu-core --test smoke -- --ignored --nocapture
 ```
-
-**Environment variables:**
-- `BBK_GAME_DIR` — override game directory (default: `tmp/games`)
-- `BBK_ROM_DIR` — override ROM directory (default: `tmp/roms/4980`)
-
-**Output:**
-- Screenshots are saved to `tmp/smoke_screenshots/` (or `tmp/smoke_screenshots_extended/` for extended test)
-- Each game produces a 159×96 BMP file with green-tinted monochrome LCD simulation
 
 ## Architecture
 
@@ -266,47 +205,15 @@ The 6502 CPU executes instructions from the memory-mapped ROM, while the
 emulator provides hardware register emulation for LCD, keyboard, audio, and
 timers.
 
-## Documentation
-
-- [Architecture](docs/ARCHITECTURE.md) — Project structure and design
-- [Memory Map](docs/MEMORY-MAP.md) — Memory layout, hardware registers, and keyboard matrix
-- [System Calls](docs/SYSCALLS.md) — System call reference
-- [GAM Format](docs/GAM_FORMAT.md) — File format specification
-- [Game Compatibility](docs/GAME-COMPATIBILITY.md) — Game compatibility list and test results
-
 ## Game Compatibility
 
 Game resources can be downloaded from [Baidu Netdisk](https://pan.baidu.com/s/1xazePiM1d9Nxhxz23UL4zA?pwd=aloy).
 
-| Game | Status | Notes |
-|------|--------|-------|
-| Various .gam files | ⚠️ Partial | Basic loading works; requires ROM files |
+For detailed game list with screenshots and compatibility status, see [Game Compatibility](docs/GAME-COMPATIBILITY.md).
 
 ## Contribute
 
-Contributions are welcome! Whether you're interested in fixing bugs, adding features, improving documentation, or testing game compatibility, we'd love your help.
-
-### Development Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/jiangxincode/BBKEmu.git
-cd BBKEmu
-
-# Place ROM files
-mkdir -p system/BBKEmu
-cp /path/to/8.BIN system/BBKEmu/
-cp /path/to/E.BIN system/BBKEmu/
-
-# Build and run
-cargo run --release -p bbkemu -- game.gam
-
-# Run tests
-cargo test --workspace
-
-# Run with debug logging
-RUST_LOG=bbkemu=debug cargo run --release -p bbkemu -- game.gam --debug
-```
+Contributions are welcome! Whether you're interested in fixing bugs, adding features, improving documentation, or testing game compatibility, we'd love your help. See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for details.
 
 ## Acknowledgments
 
