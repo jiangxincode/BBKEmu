@@ -16,19 +16,19 @@ jobs:
         include:
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            artifact: bbkemu-linux-x86_64
+            artifact: bbk-emu-linux-x86_64
           - platform: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            artifact: bbkemu-linux-aarch64
+            artifact: bbk-emu-linux-aarch64
           - platform: macos-latest
             target: x86_64-apple-darwin
-            artifact: bbkemu-macos-x86_64
+            artifact: bbk-emu-macos-x86_64
           - platform: macos-latest
             target: aarch64-apple-darwin
-            artifact: bbkemu-macos-aarch64
+            artifact: bbk-emu-macos-aarch64
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact: bbkemu-windows-x86_64
+            artifact: bbk-emu-windows-x86_64
 
     runs-on: ${{ matrix.platform }}
 
@@ -84,14 +84,14 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../${{ matrix.artifact }}.tar.gz bbkemu
+          tar czf ../../../${{ matrix.artifact }}.tar.gz bbkemu-emu
           cd ../../..
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
-          7z a ../../../${{ matrix.artifact }}.zip bbkemu.exe
+          7z a ../../../${{ matrix.artifact }}.zip bbkemu-emu.exe
           cd ../../..
 
       - name: Package libretro (Unix)
@@ -142,11 +142,11 @@ jobs:
             ## Downloads
 
             ### Standalone emulator
-            - **Linux x86_64**: `bbkemu-linux-x86_64.tar.gz`
-            - **Linux aarch64**: `bbkemu-linux-aarch64.tar.gz`
-            - **macOS x86_64**: `bbkemu-macos-x86_64.tar.gz`
-            - **macOS aarch64**: `bbkemu-macos-aarch64.tar.gz`
-            - **Windows x86_64**: `bbkemu-windows-x86_64.zip`
+            - **Linux x86_64**: `bbk-emu-linux-x86_64.tar.gz`
+            - **Linux aarch64**: `bbk-emu-linux-aarch64.tar.gz`
+            - **macOS x86_64**: `bbk-emu-macos-x86_64.tar.gz`
+            - **macOS aarch64**: `bbk-emu-macos-aarch64.tar.gz`
+            - **Windows x86_64**: `bbk-emu-windows-x86_64.zip`
 
             ### libretro core (for RetroArch)
             - Files ending in `-libretro.*` contain `bbkemu_libretro.<ext>`

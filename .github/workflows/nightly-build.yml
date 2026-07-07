@@ -28,19 +28,19 @@ jobs:
         include:
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            artifact: bbkemu-linux-x86_64
+            artifact: bbk-emu-linux-x86_64
           - platform: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            artifact: bbkemu-linux-aarch64
+            artifact: bbk-emu-linux-aarch64
           - platform: macos-latest
             target: x86_64-apple-darwin
-            artifact: bbkemu-macos-x86_64
+            artifact: bbk-emu-macos-x86_64
           - platform: macos-latest
             target: aarch64-apple-darwin
-            artifact: bbkemu-macos-aarch64
+            artifact: bbk-emu-macos-aarch64
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact: bbkemu-windows-x86_64
+            artifact: bbk-emu-windows-x86_64
 
     runs-on: ${{ matrix.platform }}
 
@@ -121,7 +121,7 @@ jobs:
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../${{ matrix.artifact }}.tar.gz bbkemu
+          tar czf ../../../${{ matrix.artifact }}.tar.gz bbkemu-emu
           cd ../../..
 
       - name: Package (Windows)
@@ -129,7 +129,7 @@ jobs:
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
-          7z a ../../../${{ matrix.artifact }}.zip bbkemu.exe
+          7z a ../../../${{ matrix.artifact }}.zip bbkemu-emu.exe
           cd ../../..
 
       - name: Upload artifact

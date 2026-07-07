@@ -6,7 +6,7 @@ license.workspace = true
 description = "BBK electronic dictionary game emulator - libretro core"
 
 [lib]
-name = "bbkemu_libretro"
+name = "bbkemu"
 crate-type = ["cdylib"]
 
 [dependencies]
