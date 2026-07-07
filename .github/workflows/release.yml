@@ -118,9 +118,208 @@ jobs:
             ${{ matrix.artifact }}.*
             ${{ matrix.artifact }}-libretro.*
 
+  build-android:
+    name: Build libretro (Android)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          key: android
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27c
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Build libretro core (all ABIs)
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          cargo ndk \
+            -t arm64-v8a -t armeabi-v7a -t x86 -t x86_64 \
+            --platform 21 \
+            build -p bbkemu-libretro --release
+
+      - name: Stage libretro core (Android)
+        shell: bash
+        run: |
+          # RetroArch on Android loads cores named <corename>_libretro_android.so,
+          # one per ABI directory (matching RetroArch's cores/<abi>/ layout).
+          declare -A ABI_TRIPLE=(
+            [arm64-v8a]=aarch64-linux-android
+            [armeabi-v7a]=armv7-linux-androideabi
+            [x86]=i686-linux-android
+            [x86_64]=x86_64-linux-android
+          )
+          for abi in "${!ABI_TRIPLE[@]}"; do
+            triple="${ABI_TRIPLE[$abi]}"
+            out="libretro/bbk-emu-android/$abi"
+            mkdir -p "$out"
+            cp "target/$triple/release/libbbkemu.so" \
+               "$out/bbkemu_libretro_android.so"
+          done
+          cp crates/bbkemu-libretro/bbkemu_libretro.info \
+             libretro/bbk-emu-android/bbkemu_libretro.info
+          ls -laR libretro/bbk-emu-android
+
+      - name: Package libretro (Android)
+        shell: bash
+        run: |
+          cd libretro
+          tar czf ../bbk-emu-android-libretro.tar.gz bbk-emu-android
+          cd ..
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: bbk-emu-android
+          path: bbk-emu-android-libretro.tar.gz
+
+  build-ios:
+    name: Build libretro (iOS)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,x86_64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          key: ios
+
+      - name: Build libretro core (arm64 for real devices)
+        run: |
+          cargo build -p bbkemu-libretro --release --target aarch64-apple-ios
+
+      - name: Build libretro core (x86_64 for real devices)
+        run: |
+          cargo build -p bbkemu-libretro --release --target x86_64-apple-ios
+
+      - name: Build libretro core (arm64 for simulator)
+        run: |
+          cargo build -p bbkemu-libretro --release --target aarch64-apple-ios-sim
+
+      - name: Create universal library and stage
+        shell: bash
+        run: |
+          out="libretro/bbk-emu-ios"
+          mkdir -p "$out/simulator"
+
+          # Create universal library for real devices (arm64 + x86_64)
+          lipo -create \
+            target/aarch64-apple-ios/release/libbbkemu.dylib \
+            target/x86_64-apple-ios/release/libbbkemu.dylib \
+            -output "$out/bbkemu_libretro_ios.dylib"
+
+          # Copy arm64 simulator library
+          cp target/aarch64-apple-ios-sim/release/libbbkemu.dylib \
+             "$out/simulator/bbkemu_libretro_ios.dylib"
+
+          # Copy info file
+          cp crates/bbkemu-libretro/bbkemu_libretro.info "$out/"
+          ls -laR "$out"
+
+      - name: Package libretro (iOS)
+        shell: bash
+        run: |
+          cd libretro
+          tar czf ../bbk-emu-ios-libretro.tar.gz bbk-emu-ios
+          cd ..
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: bbk-emu-ios
+          path: bbk-emu-ios-libretro.tar.gz
+
+  build-webos:
+    name: Build libretro (webOS)
+    runs-on: ubuntu-22.04
+    env:
+      WEBOS_TOOLCHAIN_URL: https://github.com/openlgtv/buildroot-nc4/releases/latest/download/arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz
+      RUST_TARGET: armv7-unknown-linux-gnueabi
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: armv7-unknown-linux-gnueabi
+
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          key: webos
+
+      - name: Install webOS native toolchain
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 \
+            "$WEBOS_TOOLCHAIN_URL" \
+            --output "$RUNNER_TEMP/webos-toolchain.tar.gz"
+          mkdir -p "$RUNNER_TEMP/webos-toolchain"
+          tar xzf "$RUNNER_TEMP/webos-toolchain.tar.gz" \
+            -C "$RUNNER_TEMP/webos-toolchain" --strip-components=1
+          "$RUNNER_TEMP/webos-toolchain/relocate-sdk.sh"
+          echo "$RUNNER_TEMP/webos-toolchain/bin" >> "$GITHUB_PATH"
+          echo "WEBOS_TOOLCHAIN=$RUNNER_TEMP/webos-toolchain" >> "$GITHUB_ENV"
+
+      - name: Build libretro core (webOS ARMv7)
+        env:
+          CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_LINKER: arm-webos-linux-gnueabi-gcc
+          CC_armv7_unknown_linux_gnueabi: arm-webos-linux-gnueabi-gcc
+          AR_armv7_unknown_linux_gnueabi: arm-webos-linux-gnueabi-ar
+        run: cargo build -p bbkemu-libretro --release --target "$RUST_TARGET"
+
+      - name: Verify and stage libretro core (webOS)
+        shell: bash
+        run: |
+          core="target/$RUST_TARGET/release/libbbkemu.so"
+          arm-webos-linux-gnueabi-readelf -h "$core"
+          arm-webos-linux-gnueabi-readelf -d "$core"
+
+          out="libretro/bbk-emu-webos"
+          mkdir -p "$out"
+          cp "$core" "$out/bbkemu_libretro.so"
+          cp crates/bbkemu-libretro/bbkemu_libretro.info "$out/"
+          ls -la "$out"
+
+      - name: Package libretro (webOS)
+        shell: bash
+        run: |
+          cd libretro
+          tar czf ../bbk-emu-webos-libretro.tar.gz bbk-emu-webos
+          cd ..
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: bbk-emu-webos
+          path: bbk-emu-webos-libretro.tar.gz
+
   release:
     name: Create Release
-    needs: [build]
+    needs: [build, build-android, build-ios, build-webos]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
@@ -151,6 +350,20 @@ jobs:
             ### libretro core (for RetroArch)
             - Files ending in `-libretro.*` contain `bbkemu_libretro.<ext>`
               plus `bbkemu_libretro.info`, ready to drop into RetroArch.
+
+            ### Android libretro core (for RetroArch on Android)
+            - `bbk-emu-android-libretro.tar.gz` contains
+              `bbkemu_libretro_android.so` for the `arm64-v8a`,
+              `armeabi-v7a`, `x86` and `x86_64` ABIs.
+
+            ### iOS libretro core (for RetroArch on iOS)
+            - `bbk-emu-ios-libretro.tar.gz` contains:
+              - `bbkemu_libretro_ios.dylib` for real devices (arm64)
+              - `simulator/bbkemu_libretro_ios.dylib` for iOS Simulator (Apple Silicon)
+
+            ### webOS libretro core (for RetroArch on LG webOS TVs)
+            - `bbk-emu-webos-libretro.tar.gz` contains
+              `bbkemu_libretro.so` for the webOS ARMv7 ABI.
           files: artifacts/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
