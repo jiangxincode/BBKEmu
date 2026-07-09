@@ -12,8 +12,3 @@ crate-type = ["cdylib"]
 [dependencies]
 bbkemu-core = { path = "../bbkemu-core" }
 log = { workspace = true }
-
-# Provides Windows API linking (GetHostNameW etc.) needed by Rust std when
-# cross-compiling via the libretro buildbot's older mingw toolchain.
-[target.'cfg(windows)'.dependencies]
-windows-link = "0.2"
