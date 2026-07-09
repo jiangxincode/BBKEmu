@@ -4,7 +4,7 @@ authors = "jiangxincode"
 supported_extensions = "gam"
 corename = "BBKEmu"
 categories = "Emulator"
-license = "BSD-3-Clause"
+license = "GPL-3.0-or-later"
 permissions = ""
 display_version = "0.1.0"
 

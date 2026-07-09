@@ -11,7 +11,7 @@ resolver = "2"
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-license = "BSD-3-Clause"
+license = "GPL-3.0-or-later"
 repository = "https://github.com/jiangxincode/BBKEmu"
 
 [workspace.dependencies]

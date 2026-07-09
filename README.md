@@ -10,7 +10,7 @@
   <a href="https://github.com/jiangxincode/BBKEmu/releases/latest"><img src="https://img.shields.io/github/v/release/jiangxincode/BBKEmu" alt="Release"></a>
   <a href="https://github.com/jiangxincode/BBKEmu/releases"><img src="https://img.shields.io/github/downloads/jiangxincode/BBKEmu/total" alt="Downloads"></a>
   <a href="https://sonarcloud.io/dashboard?id=jiangxincode_BBKEmu"><img src="https://sonarcloud.io/api/project_badges/measure?project=jiangxincode_BBKEmu&metric=alert_status" alt="Quality Gate Status"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-BSD%203--Clause-blue.svg" alt="License: BSD 3-Clause"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPLv3%2B-blue.svg" alt="License: GPLv3 or later"></a>
 </p>
 
 BBK (步步高) A-series electronic dictionary game emulator written in Rust. Plays `.gam` game files from BBK A4980 and A4988 dictionaries.
@@ -217,8 +217,12 @@ Contributions are welcome! Whether you're interested in fixing bugs, adding feat
 
 ## Acknowledgments
 
-- [mos6502](https://crates.io/crates/mos6502) — 6502 CPU emulation library
+Some code is based on gam4980 and BBK-simulator, and this project relies heavily on mos6502 for accurate 6502 CPU emulation. Thanks to all related developers for their contributions.
+
+- [gam4980](https://codeberg.org/iyzsong/gam4980)
+- [BBK-simulator](https://gitee.com/BA4988/BBK-simulator)
+- [mos6502](https://crates.io/crates/mos6502)
 
 ## License
 
-This project is licensed under the [BSD 3-Clause License](LICENSE).
+This project is licensed under the [GNU General Public License v3.0 or later](LICENSE).
