@@ -3,7 +3,8 @@ fn main() {
     let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
 
     if target_os == "windows" && target_env == "gnu" {
-        // Keep secur32 after Rust static libraries for older MinGW linkers.
-        println!("cargo:rustc-link-arg=-lsecur32");
+        // Link Winsock 2 library needed by Rust std for older MinGW
+        // toolchains used by the libretro buildbot (provides GetHostNameW).
+        println!("cargo:rustc-link-arg=-lws2_32");
     }
 }
