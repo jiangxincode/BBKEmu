@@ -39,3 +39,8 @@ softbuffer = "0.4"
 cpal = "0.18"
 clap = { version = "4", features = ["derive"] }
 capstone = "0.14"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true

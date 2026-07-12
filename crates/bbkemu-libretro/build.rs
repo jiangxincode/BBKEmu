@@ -5,6 +5,6 @@ fn main() {
     if target_os == "windows" && target_env == "gnu" {
         // Link Winsock 2 library needed by Rust std for older MinGW
         // toolchains used by the libretro buildbot (provides GetHostNameW).
-        println!("cargo:rustc-link-arg=-lws2_32");
+        println!("cargo:rustc-link-lib=ws2_32");
     }
 }
